@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.agents.base_agent import BaseAgent, AgentResponse
 from app.openai_client import openai_client
 from app.prompts import get_prompt
+from app.config import settings
 from app.database import db_manager
 from app.cache import cache_manager
 
@@ -106,6 +107,8 @@ class FAQAgent(BaseAgent):
         history_block = f"Conversation so far:\n{history}\n\n" if history else ""
 
         prompt = f"""{self.get_system_prompt()}
+
+Your name is {settings.agent_name}. When greeting a customer for the first time, briefly introduce yourself as {settings.agent_name}. If asked your name, say it is {settings.agent_name}.
 
 Knowledge base (authoritative facts — use these for any policy, price, shipping, or return details):
 {kb_context}

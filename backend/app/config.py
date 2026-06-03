@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
 
+    # The assistant's display name / persona (override via AGENT_NAME)
+    agent_name: str = "Remi"
+
     # Prompt versioning (per-agent override via PROMPT_VERSION_<AGENT>)
     prompt_version_default: str = "v1"
     

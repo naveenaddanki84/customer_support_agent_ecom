@@ -221,6 +221,20 @@ async def get_admin_stats() -> dict:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/agent")
+async def get_agent_info() -> dict:
+    """Return the assistant's name and a welcome message for new chats."""
+    from app.config import settings
+    name = settings.agent_name
+    return {
+        "name": name,
+        "welcome": (
+            f"Hi! I'm {name}, your virtual support assistant. I can help with orders, "
+            f"refunds, and general questions. How can I help you today?"
+        ),
+    }
+
+
 @router.get("/customers")
 async def list_customers() -> List[dict]:
     """List seeded customers for the chat user switcher and admin views."""
@@ -288,7 +302,22 @@ async def get_admin_session(session_id: UUID) -> dict:
                     row["tool_trace"] = json.loads(trace)
                 except json.JSONDecodeError:
                     row["tool_trace"] = []
-        return {"session_id": str(session_id), "messages": messages, "logs": logs}
+        # Pending escalations for this session — let the admin judge them here.
+        escalations = await db_manager.execute_query(
+            """
+            SELECT id, order_id, amount, reason, created_at
+            FROM refund_decisions
+            WHERE session_id = $1 AND decision = 'escalated' AND resolution IS NULL
+            ORDER BY created_at DESC
+            """,
+            session_id,
+        )
+        return {
+            "session_id": str(session_id),
+            "messages": messages,
+            "logs": logs,
+            "escalations": escalations,
+        }
     except Exception as e:
         logger.error(f"Failed to get admin session: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -395,29 +424,63 @@ async def list_escalations(include_resolved: bool = False) -> List[dict]:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+async def _compose_resolution_reply(order_id: str, amount, action: str, admin_reason: str) -> str:
+    """Have the named agent compose a customer reply for a resolved escalation."""
+    from app.config import settings
+    from app.openai_client import openai_client
+
+    name = settings.agent_name
+    verb = "approved" if action == "approved" else "could not be approved"
+    amount_txt = f" (${amount})" if amount is not None else ""
+    prompt = (
+        f"You are {name}, a warm, professional e-commerce store support assistant. "
+        f"A human specialist has reviewed an escalated refund request and decided it {verb}.\n\n"
+        f"Order: {order_id}{amount_txt}\n"
+        f"Outcome: {'approved' if action == 'approved' else 'rejected'}\n"
+        f"Specialist's reason: {admin_reason or '(no reason provided)'}\n\n"
+        f"Write a short, friendly CHAT message (2-4 sentences) to the customer telling them this "
+        f"outcome and incorporating the specialist's reason naturally. If approved, reassure them "
+        f"the refund will be processed; if rejected, be empathetic and clear. "
+        f"This is a live chat, NOT an email: do not add a subject line, do not write 'Dear ...', "
+        f"and never use placeholders like [Customer's Name]. Address the customer directly. "
+        f"You may sign off with just your name, {name}. Do not invent any details beyond the "
+        f"outcome and the reason."
+    )
+    try:
+        return (await openai_client.generate_text(prompt, temperature=0.4)).strip()
+    except Exception as e:  # noqa: BLE001 - fall back to a plain note if the LLM fails
+        logger.error(f"Resolution reply generation failed: {e}")
+        outcome = "approved" if action == "approved" else "could not be approved"
+        tail = f" {admin_reason}" if admin_reason else ""
+        return f"Update on your refund for order {order_id}: it has been {outcome}.{tail} — {name}"
+
+
 @router.post("/admin/escalations/{decision_id}/resolve")
 async def resolve_escalation(decision_id: UUID, body: dict) -> dict:
-    """Approve or reject an escalated refund; notify the customer's session."""
+    """Approve or reject an escalated refund using the admin's reason; the agent
+    composes a reply that is stored and live-pushed into the customer's session."""
     action = (body or {}).get("action")
     reviewer = ((body or {}).get("reviewer") or "admin")[:255]
+    admin_reason = ((body or {}).get("reason") or "").strip()
     if action not in {"approved", "rejected"}:
         raise HTTPException(status_code=400, detail="action must be 'approved' or 'rejected'")
     try:
         rows = await db_manager.execute_query(
             """
             UPDATE refund_decisions
-            SET resolution = $2, resolved_by = $3, resolved_at = NOW()
+            SET resolution = $2, resolved_by = $3, resolution_note = $4, resolved_at = NOW()
             WHERE id = $1 AND decision = 'escalated' AND resolution IS NULL
             RETURNING id, order_id, session_id, amount
             """,
-            decision_id, action, reviewer,
+            decision_id, action, reviewer, admin_reason or None,
         )
         if not rows:
             raise HTTPException(status_code=404, detail="Escalated decision not found")
         row = rows[0]
 
-        verb = "approved" if action == "approved" else "declined"
-        note = f"A specialist has {verb} your refund request for order {row['order_id']}."
+        note = await _compose_resolution_reply(
+            row["order_id"], row.get("amount"), action, admin_reason
+        )
         if row.get("session_id"):
             await db_manager.execute_command(
                 """INSERT INTO messages (session_id, sender, content, message_type, metadata)
@@ -435,7 +498,8 @@ async def resolve_escalation(decision_id: UUID, body: dict) -> dict:
                     "metadata": {"agent": "human", "decision": action},
                 },
             })
-        return {"id": str(row["id"]), "resolution": action, "order_id": row["order_id"]}
+        return {"id": str(row["id"]), "resolution": action,
+                "order_id": row["order_id"], "reply": note}
     except HTTPException:
         raise
     except Exception as e:

@@ -145,6 +145,7 @@ CREATE TABLE refund_decisions (
     reason TEXT NOT NULL,
     resolution VARCHAR(20) CHECK (resolution IN ('approved', 'rejected')),
     resolved_by VARCHAR(255),
+    resolution_note TEXT,
     resolved_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
