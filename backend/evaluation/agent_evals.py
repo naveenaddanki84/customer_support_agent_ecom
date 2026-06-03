@@ -21,10 +21,33 @@ import os
 import sys
 import urllib.request
 
+import asyncpg
 import websockets
 
 API_BASE = os.getenv("API_BASE", "http://localhost:8000")
 WS_BASE = API_BASE.replace("http", "ws", 1)
+DB_URL = os.getenv("EVAL_DB_URL", "postgresql://user:password@localhost:5432/db")
+
+# Orders seeded as already refunded; everything else starts not-refunded.
+_SEED_REFUNDED = ("ORD-1006", "ORD-1019", "ORD-1024")
+
+
+async def reset_seed_state():
+    """Make the eval idempotent: restore orders.already_refunded to seed values.
+
+    The suite approves real orders (which correctly marks them refunded), so
+    without this a second run would deny the approve/escalate cases.
+    """
+    try:
+        pool = await asyncpg.create_pool(DB_URL, min_size=1, max_size=2)
+        await pool.execute(
+            "UPDATE orders SET already_refunded = (id = ANY($1::text[]))",
+            list(_SEED_REFUNDED),
+        )
+        await pool.close()
+        print("(reset orders.already_refunded to seed state)\n")
+    except Exception as e:  # noqa: BLE001
+        print(f"(warning: could not reset order state: {e})\n")
 
 # --- Customer emails (mock CRM) ------------------------------------------
 ALICE = "alice.johnson@example.com"
@@ -144,7 +167,7 @@ CASES = [
     ("memory recall name", "memory",
      ["My name is Atlas.", "What is my name?"], {"contains": "atlas"}),
     ("memory order then email -> approve", "memory",
-     ["I want a refund for ORD-1001.", f"my email is {ALICE}"], {"decision": "approved"}),
+     ["I want a refund for ORD-1016.", f"my email is {HENRY}"], {"decision": "approved"}),
     ("memory email then order -> deny final sale", "memory",
      [f"my email is {BOB}", "please refund ORD-1004"], {"decision": "denied"}),
 ]
@@ -195,6 +218,7 @@ def check(expect, content, meta):
 
 async def main():
     print(f"Running {len(CASES)} agent evals against {API_BASE}\n")
+    await reset_seed_state()
     passed = 0
     failures = []
     cat_stats = {}
