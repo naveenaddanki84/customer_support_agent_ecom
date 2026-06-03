@@ -17,6 +17,28 @@ from app.workflow import chat_workflow
 
 logger = logging.getLogger(__name__)
 
+# Active chat WebSocket connections, keyed by session id (string).
+# Single-process registry — used to live-push admin notifications into a chat.
+_active_connections: dict[str, "WebSocket"] = {}
+
+
+async def push_to_session(session_id: str, payload: dict) -> bool:
+    """Send a JSON payload to a session's live WebSocket if connected.
+
+    Best-effort: returns True if a live socket received it, False otherwise.
+    The message should already be persisted by the caller; this is only the
+    real-time delivery.
+    """
+    ws = _active_connections.get(str(session_id))
+    if ws is None:
+        return False
+    try:
+        await ws.send_text(json.dumps(payload))
+        return True
+    except Exception as e:  # noqa: BLE001 - a dead socket just means no live delivery
+        logger.warning(f"push_to_session failed for {session_id}: {e}")
+        return False
+
 
 async def save_message(message: ChatMessage) -> UUID:
     """Save message to PostgreSQL database."""
@@ -81,7 +103,8 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
     """Handle WebSocket connection lifecycle with complete workflow."""
     await websocket.accept()
     logger.info(f"WebSocket connected for session {session_id}")
-    
+    _active_connections[str(session_id)] = websocket
+
     try:
         # Send connection confirmation
         await websocket.send_text(json.dumps({
@@ -201,4 +224,5 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
     except Exception as e:
         logger.error(f"WebSocket error for session {session_id}: {e}")
     finally:
-        logger.info(f"WebSocket connection closed for session {session_id}") 
+        _active_connections.pop(str(session_id), None)
+        logger.info(f"WebSocket connection closed for session {session_id}")
