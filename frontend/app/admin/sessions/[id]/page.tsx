@@ -1,23 +1,78 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
-import { api, AgentLog } from '../../../lib/api'
+import { use, useCallback, useEffect, useState } from 'react'
+import { api, AgentLog, PendingEscalation } from '../../../lib/api'
 
 function prettyResult(result: string): string {
   try { return JSON.stringify(JSON.parse(result), null, 2) } catch { return result }
+}
+
+function JudgeCard({ esc, onResolved }: { esc: PendingEscalation; onResolved: () => void }) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const decide = async (action: 'approved' | 'rejected') => {
+    setBusy(true)
+    setErr(null)
+    try {
+      await api.resolveEscalation(esc.id, action, reason.trim())
+      onResolved()
+    } catch (e) {
+      setErr(String(e))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+      <div className="mb-2 flex items-center gap-2 text-sm">
+        <span className="rounded bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-800">escalated</span>
+        <span className="font-semibold text-gray-800">{esc.order_id}</span>
+        {esc.amount != null && <span className="text-gray-600">${Number(esc.amount).toFixed(2)}</span>}
+      </div>
+      <div className="mb-3 text-sm text-gray-600">{esc.reason}</div>
+      <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+        Your reason (the assistant will use this in its reply to the customer)
+      </label>
+      <textarea
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        rows={3}
+        placeholder="e.g. Loyal customer and the item arrived damaged, approving as an exception."
+        className="mb-3 w-full rounded-lg border border-gray-300 bg-white p-2 text-sm text-gray-800"
+      />
+      {err && <div className="mb-2 text-xs text-red-600">{err}</div>}
+      <div className="flex gap-2">
+        <button
+          disabled={busy}
+          onClick={() => decide('approved')}
+          className="rounded-lg bg-green-600 px-4 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50"
+        >Approve refund</button>
+        <button
+          disabled={busy}
+          onClick={() => decide('rejected')}
+          className="rounded-lg bg-red-600 px-4 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+        >Reject refund</button>
+      </div>
+    </div>
+  )
 }
 
 export default function SessionTracePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const [logs, setLogs] = useState<AgentLog[]>([])
   const [messages, setMessages] = useState<any[]>([])
+  const [escalations, setEscalations] = useState<PendingEscalation[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api.adminSession(id)
-      .then((d) => { setLogs(d.logs); setMessages(d.messages) })
+      .then((d) => { setLogs(d.logs); setMessages(d.messages); setEscalations(d.escalations || []) })
       .catch((e) => setError(String(e)))
   }, [id])
+
+  useEffect(() => { load() }, [load])
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -25,6 +80,17 @@ export default function SessionTracePage({ params }: { params: Promise<{ id: str
       <h1 className="mb-1 mt-2 text-lg font-bold text-gray-800">Session trace</h1>
       <p className="mb-4 text-xs text-gray-500">{id}</p>
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+      {escalations.length > 0 && (
+        <div className="mb-6">
+          <h2 className="mb-2 text-sm font-semibold uppercase text-amber-700">Pending escalation — your decision</h2>
+          <div className="space-y-3">
+            {escalations.map((esc) => (
+              <JudgeCard key={esc.id} esc={esc} onResolved={load} />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-6">
         <div>

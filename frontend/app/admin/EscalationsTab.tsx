@@ -1,29 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, Escalation } from '../lib/api'
 
 export default function EscalationsTab() {
   const [items, setItems] = useState<Escalation[]>([])
-  const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(() => {
+  useEffect(() => {
     api.escalations().then(setItems).catch((e) => setError(String(e)))
   }, [])
-  useEffect(() => { load() }, [load])
-
-  const resolve = async (id: string, action: 'approved' | 'rejected') => {
-    setBusy(id)
-    try {
-      await api.resolveEscalation(id, action)
-      load()
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(null)
-    }
-  }
 
   return (
     <div>
@@ -42,18 +28,16 @@ export default function EscalationsTab() {
               {e.amount != null ? `$${Number(e.amount).toFixed(2)}` : '—'}
             </div>
             <div className="flex-1 text-sm text-gray-500">{e.reason}</div>
-            <div className="flex gap-2">
-              <button
-                disabled={busy === e.id}
-                onClick={() => resolve(e.id, 'approved')}
-                className="rounded-lg bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700 disabled:opacity-50"
-              >Approve</button>
-              <button
-                disabled={busy === e.id}
-                onClick={() => resolve(e.id, 'rejected')}
-                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-50"
-              >Reject</button>
-            </div>
+            {e.session_id ? (
+              <a
+                href={`/admin/sessions/${e.session_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg bg-green-600 px-3 py-1.5 text-sm text-white hover:bg-green-700"
+              >Review →</a>
+            ) : (
+              <span className="text-xs text-gray-400">no session</span>
+            )}
           </div>
         ))}
       </div>

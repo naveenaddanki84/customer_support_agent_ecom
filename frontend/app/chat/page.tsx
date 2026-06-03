@@ -18,9 +18,16 @@ export default function ChatPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [isTyping, setIsTyping] = useState(false)
   const [messageCount, setMessageCount] = useState(0)
+  const [agentName, setAgentName] = useState('Assistant')
+  const [welcome, setWelcome] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  
+
   const { messages, connectionStatus, sendMessage, reconnect } = useChat(sessionId)
+
+  // Load the agent's name + welcome message once
+  useEffect(() => {
+    api.agent().then((a) => { setAgentName(a.name); setWelcome(a.welcome) }).catch(() => {})
+  }, [])
   
   // Auto-scroll to bottom
   useEffect(() => {
@@ -156,11 +163,11 @@ export default function ChatPage() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold">
-                  Virtual Assistant
+                  {agentName}
                 </h1>
                 <p className="text-green-100 text-sm flex items-center gap-2">
                   <Sparkles className="w-4 h-4" />
-                  24/7 intelligent support
+                  Your virtual support assistant
                 </p>
               </div>
             </div>
@@ -199,18 +206,15 @@ export default function ChatPage() {
         {/* Messages Container */}
         <div className="flex-1 overflow-y-auto bg-gray-50 p-6 space-y-4">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="p-8 bg-white/80 backdrop-blur-sm rounded-3xl border border-gray-200 shadow-lg">
-                <MessageCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-800 mb-2">
-                  Welcome to chat!
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  Start a conversation with our virtual assistant
+            <div className="flex items-start gap-3 animate-fadeIn">
+              <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <Bot className="w-5 h-5 text-white" />
+              </div>
+              <div className="max-w-[80%] rounded-2xl rounded-tl-sm bg-white border border-gray-200 shadow-sm px-5 py-3">
+                <div className="text-xs font-medium text-green-600 mb-1">{agentName}</div>
+                <p className="text-gray-800">
+                  {welcome || `Hi! I'm ${agentName}, your virtual support assistant. How can I help you today?`}
                 </p>
-                <div className="text-sm text-gray-500">
-                  Type your message below to begin
-                </div>
               </div>
             </div>
           ) : (
