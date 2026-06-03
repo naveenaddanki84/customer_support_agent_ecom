@@ -102,13 +102,15 @@ class FAQAgent(BaseAgent):
         knowledge_base = await self._load_knowledge_base()
         kb_context = self._format_knowledge_base(knowledge_base)
 
+        history = (context or {}).get("history", "")
+        history_block = f"Conversation so far:\n{history}\n\n" if history else ""
+
         prompt = f"""{self.get_system_prompt()}
 
 Knowledge base (authoritative facts — use these for any policy, price, shipping, or return details):
 {kb_context}
 
-Conversation context: {context or {}}
-Customer message: {message}"""
+{history_block}Customer message: {message}"""
 
         response = await openai_client.generate_text(prompt, temperature=0.5)
 

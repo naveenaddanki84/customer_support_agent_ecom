@@ -96,6 +96,8 @@ class RefundAgent:
         """Run the refund tool loop for one customer message."""
         session_id = (context or {}).get("session_id")
         today = date.today().isoformat()
+        history = (context or {}).get("history", "")
+        history_block = f"Conversation so far:\n{history}\n\n" if history else ""
 
         messages = [
             {
@@ -104,7 +106,7 @@ class RefundAgent:
             },
             {
                 "role": "user",
-                "content": f"Customer message: {message}\nKnown context: {context or {}}",
+                "content": f"{history_block}Customer message: {message}",
             },
         ]
 

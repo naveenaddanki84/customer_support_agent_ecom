@@ -40,10 +40,12 @@ class EscalationAgent(BaseAgent):
 
     async def process(self, message: str, context: Dict[str, Any]) -> EscalationResponse:
         """Process an escalation request and prepare the human handoff."""
+        history = (context or {}).get("history", "")
+        history_block = f"Conversation so far:\n{history}\n\n" if history else ""
+
         prompt = f"""{self.get_system_prompt()}
 
-Customer message: {message}
-Context: {context or {}}"""
+{history_block}Customer message: {message}"""
 
         decision = await openai_client.generate_structured(
             prompt=prompt,

@@ -43,11 +43,13 @@ class RouterAgent(BaseAgent):
         context: Optional[Dict[str, Any]] = None
     ) -> RoutingDecision:
         """Classify user intent and determine routing decision."""
-        # Versioned classification guidance + the dynamic message/context.
+        # Versioned classification guidance + prior conversation + current message.
+        history = (context or {}).get("history", "")
+        history_block = f"Conversation so far:\n{history}\n\n" if history else ""
         prompt = (
             f"{self.get_system_prompt()}\n\n"
-            f"User message: {user_message}\n"
-            f"Context: {context or {}}"
+            f"{history_block}"
+            f"User message: {user_message}"
         )
 
         # Generate structured routing decision

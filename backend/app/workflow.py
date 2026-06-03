@@ -82,20 +82,44 @@ class ChatWorkflow:
         
         return builder.compile(checkpointer=self.checkpointer)
     
+    @staticmethod
+    def _format_history(messages, max_turns: int = 12) -> str:
+        """Render prior conversation (everything before the current message).
+
+        The checkpointer accumulates the full message list per session; this
+        gives agents the memory to handle follow-ups ("what's my name?").
+        """
+        prior = messages[:-1]  # exclude the current user message
+        lines = []
+        last_line = None
+        for msg in prior:
+            role = "Customer" if isinstance(msg, HumanMessage) else "Assistant"
+            content = str(msg.content).strip()
+            if not content:
+                continue
+            line = f"{role}: {content}"
+            # Collapse consecutive duplicate assistant lines (agent + guardrails echo)
+            if line == last_line:
+                continue
+            lines.append(line)
+            last_line = line
+        return "\n".join(lines[-max_turns:]) if lines else ""
+
     async def _router_node(self, state: AgentState) -> Dict[str, Any]:
         """Router node for intent classification."""
         last_message = state["messages"][-1]
         user_message = str(last_message.content)
-        
+
         context = {
             "session_id": str(state["session_id"]),
             "user_id": state["user_id"],
-            "escalation_level": state.get("escalation_level", 0)
+            "escalation_level": state.get("escalation_level", 0),
+            "history": self._format_history(state["messages"]),
         }
-        
+
         # Classify intent and determine routing
         decision = await self.router_agent.classify_intent(user_message, context)
-        
+
         return {
             "current_agent": "router",
             "agent_reasoning": decision.reasoning,
