@@ -218,3 +218,44 @@ async def get_admin_stats() -> dict:
     except Exception as e:
         logger.error(f"Failed to get admin stats: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/customers")
+async def list_customers() -> List[dict]:
+    """List seeded customers for the chat user switcher and admin views."""
+    try:
+        return await db_manager.execute_query(
+            "SELECT id, name, email, tier FROM customers ORDER BY id"
+        )
+    except Exception as e:
+        logger.error(f"Failed to list customers: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/users/{user_id}/sessions")
+async def list_user_sessions(user_id: str) -> List[dict]:
+    """List a user's chat sessions (newest first) with a derived title."""
+    try:
+        rows = await db_manager.execute_query(
+            """
+            SELECT s.id, s.created_at, s.updated_at, s.status,
+                   (SELECT count(*) FROM messages m WHERE m.session_id = s.id) AS message_count,
+                   (SELECT content FROM messages m WHERE m.session_id = s.id
+                      AND m.sender = 'user' ORDER BY m.created_at ASC LIMIT 1) AS title,
+                   (SELECT al.handling_agent FROM agent_logs al WHERE al.session_id = s.id
+                      ORDER BY al.created_at DESC LIMIT 1) AS last_agent,
+                   (SELECT al.refund_decision FROM agent_logs al WHERE al.session_id = s.id
+                      ORDER BY al.created_at DESC LIMIT 1) AS last_decision
+            FROM sessions s
+            WHERE s.user_id = $1
+            ORDER BY s.updated_at DESC
+            """,
+            user_id,
+        )
+        for row in rows:
+            title = (row.get("title") or "New chat").strip()
+            row["title"] = (title[:48] + "…") if len(title) > 48 else title
+        return rows
+    except Exception as e:
+        logger.error(f"Failed to list user sessions: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
