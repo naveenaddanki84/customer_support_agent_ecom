@@ -138,3 +138,5 @@ admin-dashboard.png
 docs/
 # Working docs (kept local, not in the repo)
 CHECKLIST.md
+
+/backend/scripts/reset_demo_state.sql

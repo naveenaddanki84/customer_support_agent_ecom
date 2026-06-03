@@ -42,6 +42,16 @@ cp env.example .env
 docker compose up --build
 ```
 
+Useful lifecycle commands:
+
+```bash
+docker compose up -d --build     # start in the background (detached)
+docker compose logs -f backend   # follow the backend logs
+docker compose ps                # check service health
+docker compose down              # stop and remove the containers
+docker compose down -v           # …and wipe the database volume (fresh re-seed on next up)
+```
+
 Then open:
 
 | Surface | URL |
@@ -67,72 +77,100 @@ OPENAI_MODEL=gpt-4o-mini
 
 Clean separation of concerns: the **UI** talks only to the **API**; the API delegates to a **service layer** and a **LangGraph orchestration layer**; all data access goes through a **repository layer**; and a **deterministic policy guard** sits between the LLM and the database as a safety net.
 
+![Architecture](screenshots/architecture.png)
+
+<details>
+<summary>Mermaid source (renders live on GitHub)</summary>
+
 ```mermaid
 flowchart TB
-    subgraph FE["Frontend · Next.js 15 / React 19 / Tailwind v4"]
-        CHAT["Chat UI<br/>user switcher · orders · history · end chat"]
-        ADMIN["Admin UI<br/>overview · escalations · sessions · customers"]
+    subgraph FE["Frontend — Next.js 15 / React 19 / Tailwind v4"]
+        CHAT["Chat UI<br/>switcher · orders · history · end chat"]
+        ADMIN["Admin UI<br/>logs · escalations · sessions · customers"]
     end
 
-    subgraph APIL["API · FastAPI"]
-        WS["WebSocket /ws/:session<br/>+ in-memory connection registry"]
+    subgraph API["API — FastAPI"]
+        WS["WebSocket /ws/:session<br/>+ connection registry"]
         CR["chat router"]
         AR["admin router"]
     end
 
     subgraph SVC["Service layer"]
-        ESC_S["escalation_service<br/>human-in-the-loop resolve"]
+        ESC_S["escalation_service<br/>human-in-the-loop"]
         ADM_S["admin_service"]
         AGT_S["agent_service"]
     end
 
     subgraph ORCH["LangGraph orchestration"]
-        RT["Router agent<br/>intent classification"]
+        RT["Router<br/>intent classification"]
         FAQ["FAQ agent"]
         RF["Refund agent<br/>tool-calling loop"]
         ES["Escalation agent"]
-        GR["Guardrails · LLM safety"]
-        PGRD["Policy guard · deterministic"]
+        PGRD["Policy guard<br/>deterministic safety net"]
+        GR["Guardrails<br/>LLM safety check"]
     end
 
-    TOOLS["Tools<br/>lookup customer · get order · policy · record decision"]
+    TOOLS["Refund tools<br/>lookup · get order · policy · record"]
     REPO["Repositories<br/>single source of SQL"]
-    CFG["Versioned prompts + config.yaml"]
-    LLM(["OpenAI<br/>structured output + tool calling"])
+    LLM(["OpenAI<br/>structured output + tool calling<br/>· used by every agent ·"])
+    CFG["Versioned prompts<br/>+ config.yaml"]
 
     subgraph DATA["Data"]
-        PGSQL[("PostgreSQL<br/>customers · orders · policy<br/>sessions · messages · audit logs<br/>LangGraph checkpoints")]
-        RED[("Redis · cache")]
+        PG[("PostgreSQL<br/>CRM · orders · policy · sessions<br/>audit logs · LangGraph checkpoints")]
+        RED[("Redis cache")]
     end
 
-    CHAT -->|REST + WebSocket| WS
+    %% ---- customer request → response cycle ----
+    CHAT -->|WebSocket| WS
     CHAT -->|REST| CR
-    ADMIN -->|REST| AR
     WS --> RT
-    CR --> REPO
-    AR --> ESC_S
-    AR --> ADM_S
-    AR --> AGT_S
-    RT --> FAQ
-    RT --> RF
-    RT --> ES
-    FAQ --> GR
-    RF --> GR
-    ES --> GR
+    RT --> FAQ & RF & ES
     RF --> TOOLS
     RF --> PGRD
-    FAQ --> REPO
-    TOOLS --> REPO
-    ORCH --> LLM
-    ORCH -.->|persistent memory| PGSQL
-    ORCH --> CFG
-    PGRD --> CFG
-    ESC_S --> REPO
+    FAQ --> GR
+    ES --> GR
+    PGRD --> GR
+    GR -->|validated reply| WS
+
+    %% ---- admin cycle ----
+    ADMIN -->|REST| AR
+    AR --> ESC_S & ADM_S & AGT_S
     ESC_S -.->|live push| WS
+
+    %% ---- data access ----
+    CR --> REPO
+    TOOLS --> REPO
+    PGRD --> REPO
+    ESC_S --> REPO
     ADM_S --> REPO
-    REPO --> PGSQL
+    AGT_S --> REPO
+    REPO --> PG
+    RT -.->|persistent memory| PG
     FAQ -.->|kb cache| RED
+
+    %% ---- shared dependencies ----
+    RT -.-> LLM
+    RF -.-> LLM
+    GR -.-> LLM
+    RF -.-> CFG
+    PGRD -.-> CFG
+
+    classDef fe fill:#a5d8ff,stroke:#1c7ed6,color:#000
+    classDef api fill:#d0bfff,stroke:#7048e8,color:#000
+    classDef svc fill:#ffd8a8,stroke:#e8590c,color:#000
+    classDef agent fill:#b2f2bb,stroke:#2f9e44,color:#000
+    classDef safety fill:#ffc9c9,stroke:#e03131,color:#000
+    classDef dep fill:#f1f3f5,stroke:#868e96,color:#000
+
+    class CHAT,ADMIN fe
+    class WS,CR,AR api
+    class ESC_S,ADM_S,AGT_S svc
+    class RT,FAQ,RF,ES agent
+    class PGRD,GR safety
+    class TOOLS,REPO,LLM,CFG dep
 ```
+
+</details>
 
 ### Agent loop
 
@@ -215,6 +253,33 @@ The mock CRM seeds 15 customers and 25 orders covering every edge case. Try thes
 
 ---
 
+## Tests & evaluation
+
+Three tiers, from fast pure-logic checks to full LLM behavioural evals — all green:
+
+| Suite | What it covers | Result |
+|-------|----------------|--------|
+| **Unit** — `backend/tests/unit` | `policy_guard` reconciliation (stricter-wins) and `app_config` loading/overrides; no stack, no network | ✅ **19 / 19 passed** |
+| **Adversarial edge cases** — `backend/evaluation/edge_cases.py` | topic-jumping mid-chat, prompt-grilling for another customer's data, over-refunding (a $5000 claim on a $129.99 order), already-refunded re-requests, and verifying the order is marked refunded in the database | ✅ **12 / 12 passed** |
+| **Behavioural evals** — `backend/evaluation/agent_evals.py` | 51 scenarios: refund approve / deny / escalate, every policy edge case, 8 prompt-injection attacks, routing, FAQ grounding, escalation, and cross-restart memory | ✅ **51 / 51 passed** |
+
+```bash
+# one-time: install backend deps (used by the unit tests and the eval runners)
+cd backend && uv sync
+
+# 1) Unit tests — no stack, no network
+uv run pytest tests/unit -q
+
+# 2) Behavioural suites need the stack running. From the repo root:
+#      docker compose up -d --build
+uv run python evaluation/edge_cases.py                                    # adversarial edge cases
+API_BASE=http://localhost:8000 uv run python evaluation/agent_evals.py    # full 51-case eval
+```
+
+> The behavioural suites are LLM-driven and idempotent — `agent_evals.py` resets seeded order state at the start of every run, so re-runs never drift. The hard invariant across all injection cases: a prompt-injection attack never yields an unauthorized refund approval.
+
+---
+
 ## Chat — user switcher, history & orders
 
 The chat at http://localhost:3000 has a sidebar to **switch between the 15 seeded customers**, see that customer's **past chats**, and view their **orders** (item, amount, status, final-sale/refunded badges). Selecting a customer sets `user_id` to their email (so refund ownership stays coherent); clicking a past chat **resumes** it — messages reload and the Postgres-checkpointed agent memory comes back. A customer can **End chat** (the admin can also close any session from the Sessions tab). Backed by `GET /api/v1/customers`, `/users/{id}/sessions`, `/users/{email}/orders`, and `DELETE /sessions/{id}`.
@@ -243,26 +308,34 @@ Endpoints: `GET /api/v1/admin/{logs,refund-decisions,stats,prompts,sessions,esca
 ```
 backend/
   app/
+    main.py          FastAPI app + lifespan (wires DB, Redis, checkpointer on startup)
     routers/         thin HTTP layer — chat + admin routers (validate, delegate)
     services/        business logic — escalation resolve, admin read-models, agent info
     repositories/    data access — all SQL, one module per aggregate
-    agents/          router, faq, refund, escalation, guardrails
+    agents/          router, faq, refund, escalation, guardrails (+ base_agent)
     tools/           refund tools (call repositories) + OpenAI tool specs
-    policy_guard.py  deterministic refund-policy safety net
-    app_config.py    loads config.yaml (agent name + policy thresholds)
+    prompts/         versioned prompt files per agent (<agent>/<version>.md) + registry
     workflow.py      LangGraph orchestration + per-turn reasoning logging
+    policy_guard.py  deterministic refund-policy safety net
     openai_client.py OpenAI client (structured output + tool calling)
-    prompts/         versioned prompt files per agent (<agent>/<version>.md)
+    app_config.py    loads config.yaml (agent name + policy thresholds)
+    config.py        env settings (OpenAI key, DB + Redis URLs)
+    database.py      asyncpg connection pool
+    cache.py         Redis client
+    models.py        Pydantic request/response models
     websocket.py     chat WebSocket transport + connection registry
   config.yaml        agent name + refund-policy thresholds
   scripts/init.sql   schema + seed data (CRM, orders, policy)
-  tests/             unit (pytest, no stack) + integration (live endpoints)
-  evaluation/        behavioural LLM evals (50-case + adversarial edge cases)
+  tests/             unit/ (pytest, no stack) + test_frontend_endpoints.py (live endpoints)
+  evaluation/        behavioural LLM evals (51-case + adversarial edge cases)
 frontend/
-  app/chat/          customer chat UI (Sidebar + page)
-  app/admin/         tabbed dashboard + per-session trace route
+  app/chat/          customer chat UI (page + Sidebar)
+  app/admin/         tabbed dashboard (overview/escalations/sessions/customers) + sessions/ trace route
+  app/hooks/         useChat — WebSocket chat hook
   app/lib/api.ts     typed API client
-docker-compose.yml   one-command stack
+  app/types.ts       shared TypeScript types
+  components/        shared UI (connection-status)
+docker-compose.yml   one-command stack (frontend · backend · postgres · redis)
 ```
 
 ---
