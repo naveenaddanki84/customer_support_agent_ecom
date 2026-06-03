@@ -478,6 +478,14 @@ async def resolve_escalation(decision_id: UUID, body: dict) -> dict:
             raise HTTPException(status_code=404, detail="Escalated decision not found")
         row = rows[0]
 
+        # An approved escalation grants the refund — mark the order as refunded
+        # so the same order cannot be refunded again.
+        if action == "approved" and row.get("order_id"):
+            await db_manager.execute_command(
+                "UPDATE orders SET already_refunded = TRUE WHERE upper(id) = upper($1)",
+                row["order_id"],
+            )
+
         note = await _compose_resolution_reply(
             row["order_id"], row.get("amount"), action, admin_reason
         )

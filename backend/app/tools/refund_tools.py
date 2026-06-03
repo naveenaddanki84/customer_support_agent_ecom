@@ -111,17 +111,28 @@ async def record_refund_decision(
             "message": "decision must be one of: approved, denied, escalated",
         }
 
+    clean_order_id = order_id.strip() if order_id else None
+
     await db_manager.execute_command(
         """
         INSERT INTO refund_decisions (order_id, session_id, decision, amount, reason)
         VALUES ($1, $2::uuid, $3, $4, $5)
         """,
-        order_id.strip() if order_id else None,
+        clean_order_id,
         session_id,
         decision_norm,
         Decimal(str(amount)) if amount is not None else None,
         reason,
     )
+
+    # An approved refund grants the money back — mark the order as refunded so
+    # the "one refund per order" policy denies any later request for it.
+    if decision_norm == "approved" and clean_order_id:
+        await db_manager.execute_command(
+            "UPDATE orders SET already_refunded = TRUE WHERE upper(id) = upper($1)",
+            clean_order_id,
+        )
+
     return {"recorded": True, "order_id": order_id, "decision": decision_norm}
 
 
