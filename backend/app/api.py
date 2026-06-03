@@ -293,6 +293,45 @@ async def get_admin_session(session_id: UUID) -> dict:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/admin/customers/{customer_id}")
+async def get_admin_customer(customer_id: int) -> dict:
+    """Return a customer profile with orders, refund history, and sessions."""
+    try:
+        customers = await db_manager.execute_query(
+            "SELECT id, name, email, tier, created_at FROM customers WHERE id = $1",
+            customer_id,
+        )
+        if not customers:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        customer = customers[0]
+
+        orders = await db_manager.execute_query(
+            """SELECT id, item, amount, status, is_final_sale, already_refunded, order_date
+               FROM orders WHERE customer_id = $1 ORDER BY order_date DESC""",
+            customer_id,
+        )
+        refunds = await db_manager.execute_query(
+            """SELECT rd.id, rd.order_id, rd.decision, rd.amount, rd.reason,
+                      rd.resolution, rd.resolved_by, rd.resolved_at, rd.created_at
+               FROM refund_decisions rd
+               JOIN orders o ON o.id = rd.order_id
+               WHERE o.customer_id = $1 ORDER BY rd.created_at DESC""",
+            customer_id,
+        )
+        sessions = await db_manager.execute_query(
+            """SELECT id, status, created_at, updated_at
+               FROM sessions WHERE user_id = $1 ORDER BY updated_at DESC""",
+            customer["email"],
+        )
+        return {"customer": customer, "orders": orders,
+                "refund_decisions": refunds, "sessions": sessions}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get customer detail: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/users/{user_id}/sessions")
 async def list_user_sessions(user_id: str) -> List[dict]:
     """List a user's chat sessions (newest first) with a derived title."""

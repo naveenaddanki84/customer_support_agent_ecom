@@ -64,10 +64,20 @@ def test_admin_session_detail():
     check("detail has messages+logs", {"messages", "logs"} <= set(data), str(list(data)))
 
 
+def test_admin_customer_detail():
+    status, data = get("/api/v1/admin/customers/1")
+    check("customer detail 200", status == 200, str(status))
+    check("customer detail shape", {"customer", "orders", "refund_decisions", "sessions"} <= set(data),
+          str(list(data)))
+    check("customer has orders", isinstance(data["orders"], list) and len(data["orders"]) >= 1,
+          str(len(data.get("orders", []))))
+
+
 if __name__ == "__main__":
     test_customers()
     test_user_sessions()
     test_admin_sessions()
     test_admin_session_detail()
+    test_admin_customer_detail()
     print("\nDONE" + (" — FAILURES: " + ",".join(_failures) if _failures else " — all passed"))
     sys.exit(1 if _failures else 0)
