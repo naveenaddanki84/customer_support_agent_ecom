@@ -131,4 +131,75 @@ async def close_session(session_id: UUID) -> dict:
         raise
     except Exception as e:
         logger.error(f"Failed to close session: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") 
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# --- Admin dashboard endpoints -------------------------------------------
+
+@router.get("/admin/logs")
+async def get_agent_logs(limit: int = 100) -> List[dict]:
+    """Return recent per-turn agent reasoning logs (newest first)."""
+    try:
+        query = """
+            SELECT id, session_id, user_message, handling_agent, router_intent,
+                   router_reasoning, refund_decision, guardrails_score,
+                   tool_trace, final_response, created_at
+            FROM agent_logs
+            ORDER BY created_at DESC
+            LIMIT $1
+        """
+        result = await db_manager.execute_query(query, limit)
+        # asyncpg returns JSONB columns as strings; parse tool_trace into objects.
+        for row in result:
+            trace = row.get("tool_trace")
+            if isinstance(trace, str):
+                try:
+                    row["tool_trace"] = json.loads(trace)
+                except json.JSONDecodeError:
+                    row["tool_trace"] = []
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to get agent logs: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/admin/refund-decisions")
+async def get_refund_decisions(limit: int = 100) -> List[dict]:
+    """Return the refund decision audit log (newest first)."""
+    try:
+        query = """
+            SELECT rd.id, rd.order_id, rd.decision, rd.amount, rd.reason,
+                   rd.created_at, o.item, c.name AS customer_name
+            FROM refund_decisions rd
+            LEFT JOIN orders o ON o.id = rd.order_id
+            LEFT JOIN customers c ON c.id = o.customer_id
+            ORDER BY rd.created_at DESC
+            LIMIT $1
+        """
+        result = await db_manager.execute_query(query, limit)
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to get refund decisions: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/admin/stats")
+async def get_admin_stats() -> dict:
+    """Return high-level counts for the admin dashboard."""
+    try:
+        rows = await db_manager.execute_query(
+            """
+            SELECT
+                (SELECT count(*) FROM agent_logs) AS total_turns,
+                (SELECT count(*) FROM refund_decisions WHERE decision = 'approved') AS approved,
+                (SELECT count(*) FROM refund_decisions WHERE decision = 'denied') AS denied,
+                (SELECT count(*) FROM refund_decisions WHERE decision = 'escalated') AS escalated
+            """
+        )
+        return rows[0] if rows else {}
+
+    except Exception as e:
+        logger.error(f"Failed to get admin stats: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

@@ -128,3 +128,6 @@ yarn.lock
 
 # Docs
 docs/
+# Test / tooling artifacts
+.playwright-mcp/
+admin-dashboard.png

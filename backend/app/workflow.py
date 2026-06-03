@@ -3,6 +3,9 @@ LangGraph workflow for multi-agent customer chat system.
 Complete agent orchestration with conditional routing.
 """
 
+import json
+import logging
+from decimal import Decimal
 from typing import Dict, Any, Literal
 from uuid import UUID
 
@@ -11,11 +14,14 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables.config import RunnableConfig
 
+from app.database import db_manager
 from app.agents.router import RouterAgent
 from app.agents.faq import FAQAgent
-from app.agents.support import SupportAgent
+from app.agents.refund import RefundAgent
 from app.agents.escalation import EscalationAgent
 from app.agents.guardrails import GuardrailsAgent
+
+logger = logging.getLogger(__name__)
 
 
 class AgentState(MessagesState):
@@ -35,7 +41,7 @@ class ChatWorkflow:
         """Initialize workflow with all agents."""
         self.router_agent = RouterAgent()
         self.faq_agent = FAQAgent()
-        self.support_agent = SupportAgent()
+        self.refund_agent = RefundAgent()
         self.escalation_agent = EscalationAgent()
         self.guardrails_agent = GuardrailsAgent()
         self.checkpointer = InMemorySaver()
@@ -48,24 +54,24 @@ class ChatWorkflow:
         # Add all agent nodes
         builder.add_node("router", self._router_node)
         builder.add_node("faq", self._faq_node)
-        builder.add_node("support", self._support_node)
+        builder.add_node("refund", self._refund_node)
         builder.add_node("escalation", self._escalation_node)
         builder.add_node("guardrails", self._guardrails_node)
-        
+
         # Add conditional routing from router
         builder.add_conditional_edges(
             "router",
             self._route_to_agent,
             {
                 "faq": "faq",
-                "support": "support",
+                "refund": "refund",
                 "escalation": "escalation"
             }
         )
-        
+
         # Add guardrails validation for all agent responses
         builder.add_edge("faq", "guardrails")
-        builder.add_edge("support", "guardrails")
+        builder.add_edge("refund", "guardrails")
         builder.add_edge("escalation", "guardrails")
         
         # All paths end at guardrails validation
@@ -110,18 +116,23 @@ class ChatWorkflow:
             "agent_reasoning": response.reasoning or ""
         }
     
-    async def _support_node(self, state: AgentState) -> Dict[str, Any]:
-        """Support agent node."""
+    async def _refund_node(self, state: AgentState) -> Dict[str, Any]:
+        """Refund agent node — runs the LangGraph tool loop and records its decision."""
         last_message = state["messages"][-1]
         user_message = str(last_message.content)
-        
+
         context = state.get("context", {})
-        response = await self.support_agent.process(user_message, context)
-        
+        response = await self.refund_agent.process(user_message, context)
+
         return {
             "messages": [AIMessage(content=response.content)],
-            "current_agent": "support",
-            "agent_reasoning": response.reasoning or ""
+            "current_agent": "refund",
+            "agent_reasoning": response.reasoning or "",
+            "context": {
+                **context,
+                "refund_decision": response.decision,
+                "refund_trace": response.trace,
+            },
         }
     
     async def _escalation_node(self, state: AgentState) -> Dict[str, Any]:
@@ -152,30 +163,29 @@ class ChatWorkflow:
         last_ai_message = ai_messages[-1]
         content = str(last_ai_message.content)
         context = state.get("context", {})
-        
-        # Only validate if it's not a standard FAQ response
-        if "I don't have specific information" in content:
-            # This is a redirect to support, no need to validate
-            return {
-                "messages": [AIMessage(content=content)],
-                "agent_reasoning": "FAQ redirect to support"
-            }
-        
+
         # Validate through guardrails
         guardrails_result = await self.guardrails_agent.process(content, context)
-        
+        guardrails_ctx = {
+            **context,
+            "guardrails_score": guardrails_result.safety_score,
+            "guardrails_is_safe": guardrails_result.is_safe,
+        }
+
         # If unsafe, replace with safe response - but be less restrictive
         if not guardrails_result.is_safe or guardrails_result.safety_score < 0.2:
             safe_response = "I apologize, but I cannot provide that information. Please contact our support team for assistance."
             return {
                 "messages": [AIMessage(content=safe_response)],
-                "agent_reasoning": f"Content flagged by guardrails. Safety score: {guardrails_result.safety_score:.2f}"
+                "agent_reasoning": f"Content flagged by guardrails. Safety score: {guardrails_result.safety_score:.2f}",
+                "context": guardrails_ctx,
             }
-        
+
         # If safe, return original response
         return {
             "messages": [AIMessage(content=content)],
-            "agent_reasoning": f"Content validated. Safety score: {guardrails_result.safety_score:.2f}"
+            "agent_reasoning": f"Content validated. Safety score: {guardrails_result.safety_score:.2f}",
+            "context": guardrails_ctx,
         }
     
     def _route_to_agent(self, state: AgentState) -> str:
@@ -206,16 +216,52 @@ class ChatWorkflow:
         )
         
         result = await self.graph.ainvoke(input_state, config)
-        
+
         # Extract final response
         ai_messages = [msg for msg in result["messages"] if isinstance(msg, AIMessage)]
         response_content = ai_messages[-1].content if ai_messages else "No response generated"
-        
+
+        ctx = result.get("context", {})
+        await self._log_turn(session_id, message, result, ctx, response_content)
+
         return {
             "content": response_content,
             "agent": result.get("current_agent", "router"),
-            "reasoning": result.get("agent_reasoning", "")
+            "reasoning": result.get("agent_reasoning", ""),
         }
+
+    async def _log_turn(
+        self,
+        session_id: UUID,
+        user_message: str,
+        result: Dict[str, Any],
+        ctx: Dict[str, Any],
+        response_content: str,
+    ) -> None:
+        """Persist a per-turn reasoning log for the admin dashboard."""
+        routing = ctx.get("routing_decision", {}) or {}
+        score = ctx.get("guardrails_score")
+        try:
+            await db_manager.execute_command(
+                """
+                INSERT INTO agent_logs (
+                    session_id, user_message, handling_agent, router_intent,
+                    router_reasoning, refund_decision, guardrails_score,
+                    tool_trace, final_response
+                ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+                """,
+                str(session_id),
+                user_message,
+                result.get("current_agent"),
+                routing.get("intent"),
+                routing.get("reasoning"),
+                ctx.get("refund_decision"),
+                Decimal(str(score)) if score is not None else None,
+                json.dumps(ctx.get("refund_trace", [])),
+                response_content,
+            )
+        except Exception as e:  # noqa: BLE001 - logging must never break the chat
+            logger.error("Failed to write agent_logs row: %s", e)
 
 
 # Global workflow instance

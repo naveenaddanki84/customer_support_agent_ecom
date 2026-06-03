@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from app.agents.base_agent import BaseAgent, AgentResponse
-from app.gemini_client import gemini_client
+from app.openai_client import openai_client
 from app.database import db_manager
 from app.cache import cache_manager
 
@@ -88,81 +88,41 @@ politely redirect to human support."""
                 ]
             }
     
+    def _format_knowledge_base(self, knowledge_base: Dict[str, Any]) -> str:
+        """Render the knowledge base into a compact text block for grounding."""
+        lines = []
+        for category, entries in knowledge_base.items():
+            for entry in entries:
+                lines.append(
+                    f"[{category}] Q: {entry['question']} A: {entry['answer']}"
+                )
+        return "\n".join(lines) if lines else "(knowledge base is empty)"
+
     async def process(self, message: str, context: Dict[str, Any]) -> FAQResponse:
-        """Process FAQ query and return structured response."""
-        # Load knowledge base
+        """Process an FAQ query with the LLM, grounded on the knowledge base."""
+        # Load knowledge base and use it as grounding context for the model
         knowledge_base = await self._load_knowledge_base()
-        
-        # Find best matching FAQ entry
-        best_match = self._find_best_match(message, knowledge_base)
-        
-        if best_match:
-            # Use the specific answer from knowledge base
-            response = best_match["answer"]
-            confidence = 0.9
-            source = best_match.get("category", "general")
-            reasoning = f"Found matching FAQ in {source} category"
-        else:
-            # No match found, redirect to support
-            response = "I don't have specific information about that. Please contact our support team for assistance."
-            confidence = 0.1
-            source = None
-            reasoning = "No matching FAQ found, redirecting to support"
-        
+        kb_context = self._format_knowledge_base(knowledge_base)
+
+        prompt = f"""{self.get_system_prompt()}
+
+Knowledge base (authoritative facts — use these for any policy, price, shipping, or return details):
+{kb_context}
+
+Conversation context: {context or {}}
+Customer message: {message}
+
+How to respond:
+- If the message is a greeting or small talk, reply warmly and briefly, then invite the customer to ask how you can help.
+- If the knowledge base covers the question, answer using it.
+- If it's a genuine question the knowledge base does not cover, give a helpful general answer and offer to connect them with a support agent if they need account-specific help.
+- Be concise, friendly, and professional. Never invent specific policies, prices, or order details that are not in the knowledge base."""
+
+        response = await openai_client.generate_text(prompt, temperature=0.5)
+
         return FAQResponse(
-            content=response,
-            confidence=confidence,
-            source=source,
-            reasoning=reasoning
-        )
-    
-    def _find_best_match(self, query: str, knowledge_base: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Find best matching FAQ entry using improved matching logic."""
-        query_lower = query.lower()
-        
-        # First, try exact question matches
-        for category, entries in knowledge_base.items():
-            for entry in entries:
-                question_lower = entry["question"].lower()
-                if query_lower in question_lower or question_lower in query_lower:
-                    entry["category"] = category
-                    return entry
-        
-        # Then, try keyword matching with better logic
-        best_score = 0
-        best_match = None
-        
-        for category, entries in knowledge_base.items():
-            for entry in entries:
-                keywords = entry.get("keywords", [])
-                score = 0
-                
-                # Check for keyword matches
-                for keyword in keywords:
-                    keyword_lower = keyword.lower()
-                    if keyword_lower in query_lower:
-                        score += 1
-                
-                # Check for word matches in question
-                question_words = entry["question"].lower().split()
-                query_words = query_lower.split()
-                for word in query_words:
-                    if word in question_words:
-                        score += 0.5
-                
-                # Check for word matches in answer
-                answer_words = entry["answer"].lower().split()
-                for word in query_words:
-                    if word in answer_words:
-                        score += 0.3
-                
-                if score > best_score:
-                    best_score = score
-                    best_match = entry
-                    best_match["category"] = category
-        
-        # Only return if we have a reasonable match
-        if best_score >= 1.0:
-            return best_match
-        
-        return None 
+            content=response.strip(),
+            confidence=0.8,
+            source=None,
+            reasoning="Answered from the knowledge base via the LLM",
+        ) 

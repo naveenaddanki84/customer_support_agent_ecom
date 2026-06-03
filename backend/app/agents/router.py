@@ -1,6 +1,6 @@
 """
 Router Agent for intent classification and message routing.
-Uses Gemini AI for intelligent conversation routing decisions.
+Uses OpenAI for intelligent conversation routing decisions.
 """
 
 from typing import Dict, Any, Optional
@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.agents.base_agent import BaseAgent, AgentResponse
 from app.agents.faq import FAQAgent
-from app.agents.support import SupportAgent
+from app.agents.refund import RefundAgent
 from app.agents.escalation import EscalationAgent
 from app.agents.guardrails import GuardrailsAgent
 
@@ -28,7 +28,7 @@ class RouterAgent(BaseAgent):
         """Initialize router agent with specialized agents."""
         super().__init__("router")
         self.faq_agent = FAQAgent()
-        self.support_agent = SupportAgent()
+        self.refund_agent = RefundAgent()
         self.escalation_agent = EscalationAgent()
         self.guardrails_agent = GuardrailsAgent()
     
@@ -43,9 +43,9 @@ Your task is to:
 4. Provide clear reasoning
 
 Available agents:
-- faq: For common questions, simple inquiries, basic information
-- support: For complex issues, technical problems, account-specific requests
-- escalation: For complaints, urgent issues, unsatisfied customers
+- faq: For common questions, store/shipping/return policy info, general help, and greetings
+- refund: For any refund request — when a customer asks to return an item, get money back, or check refund eligibility for an order
+- escalation: For complaints, urgent issues, or unsatisfied customers wanting a human
 
 Respond with:
 - content: A helpful response to the user
@@ -70,15 +70,15 @@ Context: {context or {}}
 Respond with a valid JSON object containing:
 - intent: The classified intent (string)
 - confidence: Confidence level (float between 0.0-1.0)
-- next_agent: Which agent should handle this (faq/support/escalation)
+- next_agent: Which agent should handle this (faq/refund/escalation)
 - reasoning: Brief explanation of your decision (string)
 
 Example response format:
 {{
-  "intent": "product_inquiry",
-  "confidence": 0.85,
-  "next_agent": "faq",
-  "reasoning": "User is asking about product return policy"
+  "intent": "refund_request",
+  "confidence": 0.92,
+  "next_agent": "refund",
+  "reasoning": "User wants a refund for order ORD-1001"
 }}
 
 Provide only the JSON object, no markdown formatting."""
@@ -107,12 +107,12 @@ Provide only the JSON object, no markdown formatting."""
                 agent_type="faq",
                 reasoning=response.reasoning
             )
-        elif next_agent == "support":
-            response = await self.support_agent.process(user_message, context)
+        elif next_agent == "refund":
+            response = await self.refund_agent.process(user_message, context)
             return AgentResponse(
                 content=response.content,
-                confidence=0.8,  # Support responses have high confidence
-                agent_type="support",
+                confidence=0.9,  # Refund responses are policy-grounded
+                agent_type="refund",
                 reasoning=response.reasoning
             )
         elif next_agent == "escalation":
@@ -128,41 +128,23 @@ Provide only the JSON object, no markdown formatting."""
             return await self.process(user_message, context)
     
     async def process(self, message: str, context: Dict[str, Any]) -> AgentResponse:
-        """Process message with routing and delegation."""
-        # Classify intent
+        """Classify intent, delegate to the chosen agent, and validate the reply.
+
+        Routing is driven entirely by the LLM classification — there is no
+        deterministic confidence gate. The graph in workflow.py uses the same
+        classify_intent + route mechanism; this method exists for direct use.
+        """
         decision = await self.classify_intent(message, context)
-        
-        # Route to appropriate agent if confidence is high
-        if decision.confidence > 0.7:
-            agent_response = await self.route_to_agent(message, context, decision.next_agent)
-            
-            # Validate response through guardrails
-            guardrails_result = await self.guardrails_agent.process(agent_response.content, context)
-            
-            # If unsafe content detected, provide fallback response
-            if not guardrails_result.is_safe or guardrails_result.safety_score < 0.5:
-                return AgentResponse(
-                    content="I apologize, but I cannot provide that information. Please contact our support team for assistance.",
-                    confidence=0.5,
-                    agent_type="router",
-                    reasoning=f"Content flagged by guardrails. Safety score: {guardrails_result.safety_score:.2f}"
-                )
-            
-            return agent_response
-        
-        # Fallback to router response
-        prompt = f"""You are a customer service router. Provide a helpful response.
+        agent_response = await self.route_to_agent(message, context, decision.next_agent)
 
-User message: {message}
-Context: {context}
+        # Validate the chosen agent's reply through the guardrails agent.
+        guardrails_result = await self.guardrails_agent.process(agent_response.content, context)
+        if not guardrails_result.is_safe or guardrails_result.safety_score < 0.5:
+            return AgentResponse(
+                content="I apologize, but I cannot provide that information. Please contact our support team for assistance.",
+                confidence=0.5,
+                agent_type="router",
+                reasoning=f"Content flagged by guardrails. Safety score: {guardrails_result.safety_score:.2f}",
+            )
 
-Provide a helpful response while routing to appropriate specialist."""
-        
-        response = await self.client.generate_text(prompt, temperature=0.3)
-        
-        return AgentResponse(
-            content=response,
-            confidence=decision.confidence,
-            agent_type="router",
-            reasoning=f"Routed with {decision.confidence:.2f} confidence to {decision.next_agent}"
-        ) 
+        return agent_response

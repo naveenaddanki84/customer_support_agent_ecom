@@ -7,7 +7,15 @@ from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from app.agents.base_agent import BaseAgent, AgentResponse
-from app.gemini_client import gemini_client
+from app.openai_client import openai_client
+
+
+class SafetyAssessment(BaseModel):
+    """Structured safety judgement returned by the LLM."""
+    is_safe: bool
+    has_hallucination: bool
+    safety_score: float
+    reasoning: str
 
 
 class GuardrailsResponse(BaseModel):
@@ -20,112 +28,49 @@ class GuardrailsResponse(BaseModel):
 
 
 class GuardrailsAgent(BaseAgent):
-    """Guardrails agent for content validation and safety."""
-    
+    """Guardrails agent that uses the LLM to judge response safety."""
+
     def __init__(self):
         """Initialize Guardrails agent."""
         super().__init__(agent_type="guardrails")
-    
+
     def get_system_prompt(self) -> str:
         """Return Guardrails-specific system prompt."""
-        return """You are a content safety agent. Validate responses for:
-1. Inappropriate content (hate speech, harassment, etc.)
-2. Factual accuracy and potential hallucinations
-3. Professional tone and customer service standards
+        return """You review a customer-service reply before it is sent to the customer.
 
-Analyze content and provide safety assessment."""
-    
-    def _check_safety(self, content: str, response: str) -> bool:
-        """Check if content is safe for customer service."""
-        # Only block clearly inappropriate content
-        unsafe_keywords = [
-            "hack", "admin", "internal", "system", "database",
-            "ssn", "social security", "private", "confidential",
-            "steal", "cheat", "fraud", "illegal", "criminal",
-            "password", "login", "credentials", "access"
-        ]
-        
-        content_lower = content.lower()
-        response_lower = response.lower()
-        
-        # Check for unsafe keywords in both content and response
-        for keyword in unsafe_keywords:
-            if keyword in content_lower or keyword in response_lower:
-                return False
-        
-        return True
-    
-    def _detect_hallucination(self, content: str, response: str) -> bool:
-        """Detect potential hallucinations in responses."""
-        hallucination_indicators = [
-            "i don't have access to", "i cannot verify", "i'm not sure about",
-            "this might be", "possibly", "could be", "i think"
-        ]
-        
-        response_lower = response.lower()
-        
-        # Check for uncertainty indicators
-        for indicator in hallucination_indicators:
-            if indicator in response_lower:
-                return True
-        
-        return False
-    
-    def _calculate_safety_score(self, content: str, response: str) -> float:
-        """Calculate safety score from 0.0 to 1.0."""
-        score = 1.0
-        
-        # Reduce score for safety issues
-        if not self._check_safety(content, response):
-            score -= 0.6  # Less aggressive for security issues
-        
-        # Reduce score for potential hallucinations
-        if self._detect_hallucination(content, response):
-            score -= 0.1  # Much less aggressive for uncertainty
-        
-        # Ensure score is between 0.0 and 1.0
-        return max(0.0, min(1.0, score))
-    
+A reply is SAFE when it is a normal, professional customer-service message. This explicitly includes
+legitimate help with passwords, logins, account access, billing, subscriptions, and API keys — these
+are routine support topics, not security risks.
+
+A reply is UNSAFE only when it contains hate speech, harassment, instructions for wrongdoing,
+leaked secrets or another person's private data, or clearly unprofessional / abusive language."""
+
     async def process(self, message: str, context: Dict[str, Any]) -> GuardrailsResponse:
-        """Process content through safety validation."""
-        # For FAQ responses, be much more lenient
-        if "dashboard" in message.lower() or "customize" in message.lower() or "payment" in message.lower():
-            # These are legitimate FAQ responses, don't block them
-            return GuardrailsResponse(
-                content="Content validated as safe FAQ response",
-                is_safe=True,
-                has_hallucination=False,
-                safety_score=1.0,
-                reasoning="Legitimate FAQ response, automatically approved"
-            )
-        
-        # Build validation prompt
-        prompt = f"""
-        Analyze this content for safety and accuracy:
-        
-        Content: {message}
-        Context: {context}
-        
-        Check for:
-        - Inappropriate or harmful content
-        - Factual inaccuracies or hallucinations
-        - Professional tone violations
-        
-        Provide safety assessment with reasoning.
-        """
-        
-        # Generate validation response
-        response = await gemini_client.generate_text(prompt, temperature=0.1)
-        
-        # Determine safety metrics
-        is_safe = self._check_safety(message, response)
-        has_hallucination = self._detect_hallucination(message, response)
-        safety_score = self._calculate_safety_score(message, response)
-        
+        """Validate a candidate reply using an LLM safety judgement."""
+        prompt = f"""{self.get_system_prompt()}
+
+Reply to review:
+\"\"\"{message}\"\"\"
+
+Conversation context: {context or {}}
+
+Assess the reply and return:
+- is_safe: true unless the reply is genuinely harmful or abusive per the rules above
+- has_hallucination: true only if it asserts specific facts that appear fabricated
+- safety_score: 0.0 (clearly unsafe) to 1.0 (clearly safe and professional)
+- reasoning: one short sentence explaining the judgement"""
+
+        assessment = await openai_client.generate_structured(
+            prompt=prompt,
+            response_schema=SafetyAssessment,
+            temperature=0.0
+        )
+
+        # Pass the original reply through unchanged; callers act on the metrics.
         return GuardrailsResponse(
-            content=response,
-            is_safe=is_safe,
-            has_hallucination=has_hallucination,
-            safety_score=safety_score,
-            reasoning=f"Safety score: {safety_score:.2f}, Safe: {is_safe}, Hallucination: {has_hallucination}"
-        ) 
+            content=message,
+            is_safe=assessment.is_safe,
+            has_hallucination=assessment.has_hallucination,
+            safety_score=max(0.0, min(1.0, assessment.safety_score)),
+            reasoning=assessment.reasoning
+        )

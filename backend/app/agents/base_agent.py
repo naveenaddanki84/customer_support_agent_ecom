@@ -1,5 +1,5 @@
 """
-Base agent class with Gemini AI integration.
+Base agent class with OpenAI integration.
 Provides common functionality for all specialized agents.
 """
 
@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 
-from app.gemini_client import gemini_client
+from app.openai_client import openai_client
 
 
 class AgentResponse(BaseModel):
@@ -19,12 +19,12 @@ class AgentResponse(BaseModel):
 
 
 class BaseAgent(ABC):
-    """Base class for all agents with Gemini integration."""
+    """Base class for all agents with OpenAI integration."""
     
     def __init__(self, agent_type: str):
         """Initialize agent with type identifier."""
         self.agent_type = agent_type
-        self.client = gemini_client
+        self.client = openai_client
     
     @abstractmethod
     def get_system_prompt(self) -> str:

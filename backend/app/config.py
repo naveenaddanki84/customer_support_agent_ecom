@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     redis_url: Optional[str] = None
     
     # AI configuration
-    google_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-4o-mini"
     
     # Application configuration
     environment: Optional[str] = None
@@ -51,8 +52,11 @@ class Settings(BaseSettings):
             self.redis_url = os.getenv("REDIS_URL")
         
         # Set other environment variables if not provided
-        if not self.google_api_key:
-            self.google_api_key = os.getenv("GOOGLE_API_KEY")
+        if not self.openai_api_key:
+            self.openai_api_key = os.getenv("OPENAI_API_KEY")
+
+        if self.openai_model == "gpt-4o-mini" and os.getenv("OPENAI_MODEL"):
+            self.openai_model = os.getenv("OPENAI_MODEL")
         
         if not self.environment:
             self.environment = os.getenv("ENVIRONMENT")
