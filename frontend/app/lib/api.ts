@@ -1,12 +1,16 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export interface Customer { id: number; name: string; email: string; tier: string }
+export interface Order {
+  id: string; item: string; amount: number | string; status: string
+  is_final_sale: boolean; already_refunded: boolean; order_date: string
+}
 export interface UserSession {
   id: string; title: string; message_count: number
   last_agent: string | null; last_decision: string | null; updated_at: string
 }
 export interface AdminSession {
-  id: string; user_id: string; message_count: number
+  id: string; user_id: string; status: string; message_count: number
   has_escalation: boolean; last_activity: string | null; updated_at: string
 }
 export interface Escalation {
@@ -48,8 +52,15 @@ export const api = {
   customers: () => getJson<Customer[]>(`/api/v1/customers`),
   userSessions: (userId: string) =>
     getJson<UserSession[]>(`/api/v1/users/${encodeURIComponent(userId)}/sessions`),
+  userOrders: (email: string) =>
+    getJson<Order[]>(`/api/v1/users/${encodeURIComponent(email)}/orders`),
   createSession: (userId: string) =>
     postJson<{ id: string }>(`/api/v1/sessions`, { user_id: userId, metadata: {} }),
+  closeSession: async (id: string) => {
+    const res = await fetch(`${API_BASE}/api/v1/sessions/${id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`DELETE session -> ${res.status}`)
+    return res.json()
+  },
   sessionMessages: (id: string) => getJson<unknown[]>(`/api/v1/sessions/${id}/messages`),
   adminSessions: () => getJson<AdminSession[]>(`/api/v1/admin/sessions?limit=100`),
   adminSession: (id: string) => getJson<SessionDetail>(`/api/v1/admin/sessions/${id}`),

@@ -85,6 +85,13 @@ export default function ChatPage() {
     setSessionId(id)
     setRefreshKey((k) => k + 1)
   }
+
+  const [closed, setClosed] = useState(false)
+  useEffect(() => { setClosed(false) }, [sessionId])
+  const handleCloseChat = async () => {
+    if (!sessionId) return
+    try { await api.closeSession(sessionId); setClosed(true) } catch { /* ignore */ }
+  }
   
   // Enhanced typing indicator
   useEffect(() => {
@@ -191,6 +198,15 @@ export default function ChatPage() {
                 Admin
               </a>
 
+              {sessionId && !closed && (
+                <button
+                  onClick={handleCloseChat}
+                  className="text-sm font-medium bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full border border-white/30 hover:bg-white/30 transition-colors"
+                >
+                  End chat
+                </button>
+              )}
+
               {(connectionStatus === 'disconnected' || connectionStatus === 'error') && (
                 <button
                   onClick={handleReconnect}
@@ -290,13 +306,18 @@ export default function ChatPage() {
 
         {/* Input Area */}
         <div className="border-t border-gray-200 bg-white p-4 flex-shrink-0">
+          {closed ? (
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-center text-sm text-gray-500">
+              This chat has been closed. Start a <span className="font-medium">New chat</span> to continue.
+            </div>
+          ) : (
           <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20 transition-all">
             <MessageCircle className="w-5 h-5 text-gray-400" />
             <input
               type="text"
               placeholder="Type your message here..."
               className="flex-1 bg-transparent text-gray-700 placeholder-gray-500 focus:outline-none"
-              disabled={connectionStatus !== 'connected'}
+              disabled={connectionStatus !== 'connected' || closed}
               onKeyPress={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
@@ -316,12 +337,13 @@ export default function ChatPage() {
                   input.value = ''
                 }
               }}
-              disabled={connectionStatus !== 'connected'}
+              disabled={connectionStatus !== 'connected' || closed}
               className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send className="w-5 h-5" />
             </button>
           </div>
+          )}
           
           <div className="flex items-center justify-between mt-3 text-xs text-gray-500">
             <span>Press Enter to send</span>

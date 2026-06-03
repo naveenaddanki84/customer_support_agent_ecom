@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { api, Customer, UserSession } from '../lib/api'
+import { api, Customer, Order, UserSession } from '../lib/api'
 
 interface SidebarProps {
   selectedEmail: string | null
@@ -17,14 +17,16 @@ export default function Sidebar({
 }: SidebarProps) {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [sessions, setSessions] = useState<UserSession[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
 
   useEffect(() => {
     api.customers().then(setCustomers).catch(() => setCustomers([]))
   }, [])
 
   useEffect(() => {
-    if (!selectedEmail) { setSessions([]); return }
+    if (!selectedEmail) { setSessions([]); setOrders([]); return }
     api.userSessions(selectedEmail).then(setSessions).catch(() => setSessions([]))
+    api.userOrders(selectedEmail).then(setOrders).catch(() => setOrders([]))
   }, [selectedEmail, refreshKey])
 
   return (
@@ -51,10 +53,12 @@ export default function Sidebar({
           + New chat
         </button>
       </div>
+
+      {/* Chat history */}
       <div className="px-3 pb-1 text-xs uppercase tracking-wide text-gray-500">Chat history</div>
-      <div className="flex-1 overflow-auto">
+      <div className="max-h-[35%] overflow-auto">
         {sessions.length === 0 && (
-          <div className="px-3 py-4 text-xs text-gray-400">No chats yet.</div>
+          <div className="px-3 py-3 text-xs text-gray-400">No chats yet.</div>
         )}
         {sessions.map((s) => {
           const active = s.id === activeSessionId
@@ -74,6 +78,37 @@ export default function Sidebar({
             </button>
           )
         })}
+      </div>
+
+      {/* Customer's orders */}
+      <div className="mt-1 border-t border-gray-200 px-3 pt-2 pb-1 text-xs uppercase tracking-wide text-gray-500">
+        Your orders {selectedEmail && orders.length > 0 ? `(${orders.length})` : ''}
+      </div>
+      <div className="flex-1 overflow-auto pb-2">
+        {!selectedEmail && (
+          <div className="px-3 py-3 text-xs text-gray-400">Select a customer to see orders.</div>
+        )}
+        {selectedEmail && orders.length === 0 && (
+          <div className="px-3 py-3 text-xs text-gray-400">No orders.</div>
+        )}
+        {orders.map((o) => (
+          <div key={o.id} className="border-b border-gray-100 px-3 py-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-gray-800">{o.id}</span>
+              <span className="text-gray-600">${Number(o.amount).toFixed(2)}</span>
+            </div>
+            <div className="truncate text-xs text-gray-500">{o.item}</div>
+            <div className="mt-0.5 flex flex-wrap gap-1">
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">{o.status}</span>
+              {o.is_final_sale && (
+                <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-700">final sale</span>
+              )}
+              {o.already_refunded && (
+                <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] text-green-700">refunded</span>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

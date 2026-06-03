@@ -235,6 +235,26 @@ async def get_agent_info() -> dict:
     }
 
 
+@router.get("/users/{email}/orders")
+async def list_user_orders(email: str) -> List[dict]:
+    """List a customer's orders (for the chat sidebar), newest first."""
+    try:
+        return await db_manager.execute_query(
+            """
+            SELECT o.id, o.item, o.amount, o.status, o.is_final_sale,
+                   o.already_refunded, o.order_date
+            FROM orders o
+            JOIN customers c ON c.id = o.customer_id
+            WHERE lower(c.email) = lower($1)
+            ORDER BY o.order_date DESC
+            """,
+            email,
+        )
+    except Exception as e:
+        logger.error(f"Failed to list user orders: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/customers")
 async def list_customers() -> List[dict]:
     """List seeded customers for the chat user switcher and admin views."""
