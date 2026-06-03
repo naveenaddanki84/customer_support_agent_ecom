@@ -3,7 +3,7 @@
 Edge-case / adversarial scenarios for the refund agent. Run with the stack up:
 
     docker compose up -d
-    .venv/bin/python backend/tests/edge_cases.py
+    .venv/bin/python backend/evaluation/edge_cases.py
 
 Covers: topic-jumping mid-conversation, prompt-grilling to extract another
 customer's data, over-refunding (claiming more than the order is worth),

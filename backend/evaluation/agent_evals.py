@@ -6,8 +6,8 @@ prompt-injection resistance, routing, FAQ grounding, escalation, and memory.
 
 Run against a live stack (docker compose up) from the repo root:
 
-    .venv/bin/python backend/tests/agent_evals.py
-    API_BASE=http://localhost:8000 .venv/bin/python backend/tests/agent_evals.py
+    .venv/bin/python backend/evaluation/agent_evals.py
+    API_BASE=http://localhost:8000 .venv/bin/python backend/evaluation/agent_evals.py
 
 Each case sends one or more turns over a single WebSocket session and asserts on
 the agent that handled it, the recorded refund decision, and/or response text.
