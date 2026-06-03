@@ -81,6 +81,8 @@ The system is orchestrated as a **LangGraph state graph**. A router classifies e
 - **Escalation** — prepares a human handoff with an LLM-classified reason and priority.
 - **Guardrails** — an LLM judges every outbound reply for safety and prompt-injection, replacing unsafe content with a safe fallback.
 
+**Conversation memory** is persisted in PostgreSQL via LangGraph's `AsyncPostgresSaver` checkpointer (keyed by session), so multi-turn context — and follow-ups like "what's my name?" — survive backend restarts.
+
 ### Refund agent — tool-calling loop
 
 The refund agent is itself a small LangGraph graph implementing the classic ReAct **agent ↔ tools** loop. The model decides which tools to call; the tools query PostgreSQL; results feed back until the model produces a decision and a customer reply.

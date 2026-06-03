@@ -34,15 +34,19 @@ async def lifespan(app: FastAPI):
     try:
         await db_manager.connect()
         await cache_manager.connect()
+        from app.workflow import chat_workflow
+        await chat_workflow.setup()
         logger.info("Application startup completed")
     except Exception as e:
         logger.error(f"Failed to start application: {e}")
         raise
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down application")
+    from app.workflow import chat_workflow
+    await chat_workflow.aclose()
     await db_manager.disconnect()
     await cache_manager.disconnect()
     logger.info("Application shutdown completed")

@@ -40,8 +40,28 @@ async def save_message(message: ChatMessage) -> UUID:
         raise
 
 
+def _serialize_message(row: dict) -> dict:
+    """Convert a DB message row into a JSON-serialisable dict (UUID/datetime/JSONB)."""
+    metadata = row.get("metadata")
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except json.JSONDecodeError:
+            metadata = {}
+    created_at = row.get("created_at")
+    return {
+        "id": str(row["id"]),
+        "session_id": str(row["session_id"]),
+        "sender": row["sender"],
+        "content": row["content"],
+        "message_type": row.get("message_type", "text"),
+        "created_at": created_at.isoformat() if created_at else None,
+        "metadata": metadata or {},
+    }
+
+
 async def get_message_history(session_id: UUID, limit: int = 50) -> list:
-    """Get message history for a session."""
+    """Get JSON-serialisable message history for a session (chronological order)."""
     try:
         query = """
             SELECT id, session_id, sender, content, message_type, created_at, metadata
@@ -51,7 +71,7 @@ async def get_message_history(session_id: UUID, limit: int = 50) -> list:
             LIMIT $2
         """
         result = await db_manager.execute_query(query, session_id, limit)
-        return result[::-1]  # Reverse to get chronological order
+        return [_serialize_message(row) for row in reversed(result)]
     except Exception as e:
         logger.error(f"Failed to get message history: {e}")
         return []

@@ -14,6 +14,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables.config import RunnableConfig
 
+from app.config import settings
 from app.database import db_manager
 from app.agents.router import RouterAgent
 from app.agents.faq import FAQAgent
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 class AgentState(MessagesState):
     """Extended state for multi-agent workflow."""
-    session_id: UUID
+    session_id: str  # stored as str so the checkpointer can serialize state
     user_id: str
     current_agent: str
     agent_reasoning: str
@@ -44,13 +45,16 @@ class ChatWorkflow:
         self.refund_agent = RefundAgent()
         self.escalation_agent = EscalationAgent()
         self.guardrails_agent = GuardrailsAgent()
+        self._pool = None
+        self._builder = self._build_builder()
+        # Default to in-memory persistence until setup() swaps in Postgres.
         self.checkpointer = InMemorySaver()
-        self.graph = self._build_graph()
-    
-    def _build_graph(self):
-        """Build complete state graph with all agents."""
+        self.graph = self._builder.compile(checkpointer=self.checkpointer)
+
+    def _build_builder(self) -> StateGraph:
+        """Build the state graph (uncompiled) so it can be compiled with any checkpointer."""
         builder = StateGraph(AgentState)
-        
+
         # Add all agent nodes
         builder.add_node("router", self._router_node)
         builder.add_node("faq", self._faq_node)
@@ -73,14 +77,48 @@ class ChatWorkflow:
         builder.add_edge("faq", "guardrails")
         builder.add_edge("refund", "guardrails")
         builder.add_edge("escalation", "guardrails")
-        
+
         # All paths end at guardrails validation
         builder.add_edge("guardrails", END)
-        
+
         # Start with router
         builder.add_edge(START, "router")
-        
-        return builder.compile(checkpointer=self.checkpointer)
+
+        return builder
+
+    async def setup(self) -> None:
+        """Swap the in-memory checkpointer for a persistent Postgres one.
+
+        Called once on application startup. Conversation memory then survives
+        backend restarts because it is stored in PostgreSQL.
+        """
+        try:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+            from psycopg.rows import dict_row
+            from psycopg_pool import AsyncConnectionPool
+
+            self._pool = AsyncConnectionPool(
+                conninfo=settings.database_url,
+                max_size=10,
+                open=False,
+                kwargs={"autocommit": True, "row_factory": dict_row},
+            )
+            await self._pool.open()
+
+            checkpointer = AsyncPostgresSaver(self._pool)
+            await checkpointer.setup()  # creates checkpoint tables if missing
+
+            self.checkpointer = checkpointer
+            self.graph = self._builder.compile(checkpointer=checkpointer)
+            logger.info("LangGraph Postgres checkpointer initialized (persistent memory)")
+        except Exception as e:  # noqa: BLE001 - fall back to in-memory, never block startup
+            logger.error("Postgres checkpointer init failed, using in-memory memory: %s", e)
+
+    async def aclose(self) -> None:
+        """Close the checkpointer connection pool on shutdown."""
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
     
     @staticmethod
     def _format_history(messages, max_turns: int = 12) -> str:
@@ -231,7 +269,7 @@ class ChatWorkflow:
         
         input_state = AgentState(
             messages=[HumanMessage(content=message)],
-            session_id=session_id,
+            session_id=str(session_id),
             user_id=user_id,
             current_agent="",
             agent_reasoning="",
