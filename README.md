@@ -12,6 +12,20 @@ A fully containerized AI customer support agent that **processes or denies e-com
 
 Every decision is made by the LLM reasoning over data pulled from PostgreSQL — there is no hardcoded `if amount > 500` rule logic anywhere. The policy lives in the database and is fetched at runtime.
 
+## Screenshots
+
+**Customer chat** — user switcher, per-customer orders, chat history, and a refund being escalated:
+
+![Customer chat](screenshots/chat.png)
+
+**Admin dashboard** — per-turn reasoning logs with the handling agent, decision, guardrails score, and tool count:
+
+![Admin dashboard](screenshots/admin-overview.png)
+
+**Per-session trace + human-in-the-loop** — the full conversation, every turn's reasoning and tool calls, and the approve/reject panel where an admin's reason becomes the agent's reply:
+
+![Session trace and judge panel](screenshots/admin-trace.png)
+
 ---
 
 ## Quick start (single command)
@@ -51,37 +65,89 @@ OPENAI_MODEL=gpt-4o-mini
 
 ## Architecture
 
+Clean separation of concerns: the **UI** talks only to the **API**; the API delegates to a **service layer** and a **LangGraph orchestration layer**; all data access goes through a **repository layer**; and a **deterministic policy guard** sits between the LLM and the database as a safety net.
+
+```mermaid
+flowchart TB
+    subgraph FE["Frontend · Next.js 15 / React 19 / Tailwind v4"]
+        CHAT["Chat UI<br/>user switcher · orders · history · end chat"]
+        ADMIN["Admin UI<br/>overview · escalations · sessions · customers"]
+    end
+
+    subgraph APIL["API · FastAPI"]
+        WS["WebSocket /ws/:session<br/>+ in-memory connection registry"]
+        CR["chat router"]
+        AR["admin router"]
+    end
+
+    subgraph SVC["Service layer"]
+        ESC_S["escalation_service<br/>human-in-the-loop resolve"]
+        ADM_S["admin_service"]
+        AGT_S["agent_service"]
+    end
+
+    subgraph ORCH["LangGraph orchestration"]
+        RT["Router agent<br/>intent classification"]
+        FAQ["FAQ agent"]
+        RF["Refund agent<br/>tool-calling loop"]
+        ES["Escalation agent"]
+        GR["Guardrails · LLM safety"]
+        PGRD["Policy guard · deterministic"]
+    end
+
+    TOOLS["Tools<br/>lookup customer · get order · policy · record decision"]
+    REPO["Repositories<br/>single source of SQL"]
+    CFG["Versioned prompts + config.yaml"]
+    LLM(["OpenAI<br/>structured output + tool calling"])
+
+    subgraph DATA["Data"]
+        PGSQL[("PostgreSQL<br/>customers · orders · policy<br/>sessions · messages · audit logs<br/>LangGraph checkpoints")]
+        RED[("Redis · cache")]
+    end
+
+    CHAT -->|REST + WebSocket| WS
+    CHAT -->|REST| CR
+    ADMIN -->|REST| AR
+    WS --> RT
+    CR --> REPO
+    AR --> ESC_S
+    AR --> ADM_S
+    AR --> AGT_S
+    RT --> FAQ
+    RT --> RF
+    RT --> ES
+    FAQ --> GR
+    RF --> GR
+    ES --> GR
+    RF --> TOOLS
+    RF --> PGRD
+    FAQ --> REPO
+    TOOLS --> REPO
+    ORCH --> LLM
+    ORCH -.->|persistent memory| PGSQL
+    ORCH --> CFG
+    PGRD --> CFG
+    ESC_S --> REPO
+    ESC_S -.->|live push| WS
+    ADM_S --> REPO
+    REPO --> PGSQL
+    FAQ -.->|kb cache| RED
+```
+
 ### Agent loop
 
 The system is orchestrated as a **LangGraph state graph**. A router classifies each message and delegates to a specialist; every reply is validated by a guardrails agent before it reaches the customer.
 
-```
-                            ┌─────────────┐
-   customer message  ──────▶│   Router    │  (LLM intent classification)
-                            └──────┬──────┘
-                 ┌─────────────────┼─────────────────┐
-                 ▼                 ▼                 ▼
-           ┌──────────┐     ┌────────────┐    ┌──────────────┐
-           │   FAQ    │     │   Refund   │    │  Escalation  │
-           │ (KB Q&A) │     │   agent    │    │ (human hand- │
-           └────┬─────┘     └─────┬──────┘    │    off)       │
-                │                 │           └──────┬───────┘
-                └─────────────────┼──────────────────┘
-                                  ▼
-                          ┌──────────────┐
-                          │  Guardrails  │  (LLM safety + injection check)
-                          └──────┬───────┘
-                                 ▼
-                          customer reply
-```
-
-- **Router** — LLM classifies intent (`faq` / `refund` / `escalation`) and routes. No confidence threshold gating; the classification drives the edge.
+- **Router** — LLM classifies intent (`faq` / `refund` / `escalation`) and routes; conversation context keeps multi-turn refund flows on the refund agent.
 - **FAQ** — answers store/shipping questions and greetings, grounded on a knowledge-base table.
 - **Refund** — the core agent (see below).
 - **Escalation** — prepares a human handoff with an LLM-classified reason and priority.
 - **Guardrails** — an LLM judges every outbound reply for safety and prompt-injection, replacing unsafe content with a safe fallback.
+- **Policy guard** — a *deterministic* safety net (`policy_guard.py`): it re-derives the refund verdict from the order's data + `config.yaml` thresholds and only ever makes the outcome stricter (approve → escalate → deny), so an LLM wobble can never auto-approve a forbidden refund.
 
 **Conversation memory** is persisted in PostgreSQL via LangGraph's `AsyncPostgresSaver` checkpointer (keyed by session), so multi-turn context — and follow-ups like "what's my name?" — survive backend restarts.
+
+**Layering** — `routers/` (thin HTTP) → `services/` (business logic) → `repositories/` (all SQL) → PostgreSQL. The orchestration layer (LangGraph agents + tools + guard) is independent of the API.
 
 ### Refund agent — tool-calling loop
 
@@ -177,16 +243,25 @@ Endpoints: `GET /api/v1/admin/{logs,refund-decisions,stats,prompts,sessions,esca
 ```
 backend/
   app/
+    routers/         thin HTTP layer — chat + admin routers (validate, delegate)
+    services/        business logic — escalation resolve, admin read-models, agent info
+    repositories/    data access — all SQL, one module per aggregate
     agents/          router, faq, refund, escalation, guardrails
-    tools/           PostgreSQL-backed refund tools + OpenAI tool specs
+    tools/           refund tools (call repositories) + OpenAI tool specs
+    policy_guard.py  deterministic refund-policy safety net
+    app_config.py    loads config.yaml (agent name + policy thresholds)
     workflow.py      LangGraph orchestration + per-turn reasoning logging
     openai_client.py OpenAI client (structured output + tool calling)
-    api.py           REST endpoints (sessions, admin dashboard)
-    websocket.py     chat WebSocket
+    prompts/         versioned prompt files per agent (<agent>/<version>.md)
+    websocket.py     chat WebSocket transport + connection registry
+  config.yaml        agent name + refund-policy thresholds
   scripts/init.sql   schema + seed data (CRM, orders, policy)
+  tests/             unit (pytest, no stack) + integration (live endpoints)
+  evaluation/        behavioural LLM evals (50-case + adversarial edge cases)
 frontend/
-  app/chat/          customer chat UI
-  app/admin/         admin reasoning-log dashboard
+  app/chat/          customer chat UI (Sidebar + page)
+  app/admin/         tabbed dashboard + per-session trace route
+  app/lib/api.ts     typed API client
 docker-compose.yml   one-command stack
 ```
 
