@@ -149,9 +149,15 @@ The mock CRM seeds 15 customers and 25 orders covering every edge case. Try thes
 
 ---
 
-## Chat — user switcher & history
+## Chat — user switcher, history & orders
 
-The chat at http://localhost:3000 has a sidebar to **switch between the 15 seeded customers** and see that customer's **past chats**. Selecting a customer sets `user_id` to their email (so refund ownership stays coherent); clicking a past chat **resumes** it — messages reload and the Postgres-checkpointed agent memory comes back. Backed by `GET /api/v1/customers` and `GET /api/v1/users/{user_id}/sessions`.
+The chat at http://localhost:3000 has a sidebar to **switch between the 15 seeded customers**, see that customer's **past chats**, and view their **orders** (item, amount, status, final-sale/refunded badges). Selecting a customer sets `user_id` to their email (so refund ownership stays coherent); clicking a past chat **resumes** it — messages reload and the Postgres-checkpointed agent memory comes back. A customer can **End chat** (the admin can also close any session from the Sessions tab). Backed by `GET /api/v1/customers`, `/users/{id}/sessions`, `/users/{email}/orders`, and `DELETE /sessions/{id}`.
+
+## Configuration & the policy guard
+
+Tunable, non-secret settings live in **`backend/config.yaml`** (agent name, refund escalation threshold, refund window, refundable statuses); each is overridable by an env var (`AGENT_NAME`, `REFUND_ESCALATION_THRESHOLD_USD`, `REFUND_WINDOW_DAYS`).
+
+On top of the LLM refund agent sits a **deterministic policy guard** (`policy_guard.py`): it re-derives the verdict from the order's own data + the config thresholds and only ever makes the outcome *stricter* (approve → escalate → deny). This guarantees that an LLM wobble can never auto-approve a refund the data forbids (over threshold, already refunded, outside window, final sale, …), while still letting the LLM own the conversation and the customer-facing wording.
 
 ## Admin dashboard
 
