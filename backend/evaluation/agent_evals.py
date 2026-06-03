@@ -68,7 +68,9 @@ OLIVIA = "olivia.jackson@example.com"
 
 
 def refund(order, email, extra=""):
-    return f"I'd like a refund for order {order}. My email is {email}.{(' ' + extra) if extra else ''}"
+    # Include a reason — the agent asks for one when it is missing.
+    return (f"I'd like a refund for order {order}. My email is {email}. "
+            f"The item arrived damaged.{(' ' + extra) if extra else ''}")
 
 
 # Each case: name, category, turns[list[str]], expect{agent?, decision?, decision_not?, contains?}
@@ -167,9 +169,15 @@ CASES = [
     ("memory recall name", "memory",
      ["My name is Atlas.", "What is my name?"], {"contains": "atlas"}),
     ("memory order then email -> approve", "memory",
-     ["I want a refund for ORD-1016.", f"my email is {HENRY}"], {"decision": "approved"}),
+     ["I want a refund for ORD-1016 because it stopped working.", f"my email is {HENRY}"],
+     {"decision": "approved"}),
     ("memory email then order -> deny final sale", "memory",
-     [f"my email is {BOB}", "please refund ORD-1004"], {"decision": "denied"}),
+     [f"my email is {BOB}", "please refund ORD-1004, it was the wrong size"], {"decision": "denied"}),
+
+    # --- Asks for the reason when the customer hasn't given one (no decision yet) ---
+    ("asks for reason when missing", "reason",
+     [f"I'd like a refund for ORD-1002. My email is {ALICE}."],
+     {"agent": "refund", "decision": None}),
 ]
 
 

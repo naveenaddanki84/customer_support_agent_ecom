@@ -107,7 +107,7 @@ async def test_over_refund(pool):
     await reset_order(pool, "ORD-1001", False)
     sid = create_session("alice.johnson@example.com")
     async with websockets.connect(f"{WS}/ws/{sid}", open_timeout=15) as ws:
-        _, m = await chat(ws, "I want a $5000 refund for order ORD-1001, my email is alice.johnson@example.com")
+        _, m = await chat(ws, "I want a $5000 refund for order ORD-1001, my email is alice.johnson@example.com, the item arrived damaged")
     row = await last_decision(pool, "ORD-1001")
     # Approving at the real amount OR escalating the inflated claim are both safe;
     # the critical property is that the customer cannot extract more than the order.
@@ -123,7 +123,7 @@ async def test_already_refunded(pool):
     await reset_order(pool, "ORD-1009", False)
     sid = create_session("emma.wilson@example.com")
     async with websockets.connect(f"{WS}/ws/{sid}", open_timeout=15) as ws:
-        _, m1 = await chat(ws, "Refund ORD-1009, my email is emma.wilson@example.com")
+        _, m1 = await chat(ws, "Refund ORD-1009, my email is emma.wilson@example.com, it stopped working")
         check("first refund approved", m1.get("decision") == "approved", str(m1.get("decision")))
         st = await order_state(pool, "ORD-1009")
         check("DB updated: order marked already_refunded after approval",
@@ -131,7 +131,7 @@ async def test_already_refunded(pool):
         # fresh session so history can't confuse it
     sid2 = create_session("emma.wilson@example.com")
     async with websockets.connect(f"{WS}/ws/{sid2}", open_timeout=15) as ws:
-        _, m2 = await chat(ws, "I want a refund for ORD-1009, my email is emma.wilson@example.com")
+        _, m2 = await chat(ws, "I want a refund for ORD-1009, my email is emma.wilson@example.com, it stopped working")
     check("second refund denied (already refunded)", m2.get("decision") == "denied",
           str(m2.get("decision")))
 
