@@ -134,3 +134,7 @@ admin-dashboard.png
 
 # Brainstorm visual companion
 .superpowers/
+
+docs/
+# Working docs (kept local, not in the repo)
+CHECKLIST.md
