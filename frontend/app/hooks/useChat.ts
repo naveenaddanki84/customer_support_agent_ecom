@@ -49,7 +49,9 @@ export function useChat(sessionId: string | null) {
     }
     
     setConnectionStatus('connecting')
-    
+    // Reset messages so the previous session's history doesn't bleed through
+    setMessages([])
+
     const wsUrl = `${WS_BASE_URL}/ws/${sessionId}`
     console.log('Connecting to WebSocket:', wsUrl)
     
@@ -67,6 +69,21 @@ export function useChat(sessionId: string | null) {
         const message: WebSocketMessage = JSON.parse(event.data)
         console.log('WebSocket parsed message:', message)
         switch (message.type) {
+          case 'history': {
+            // Server replays the persisted conversation on (re)connect.
+            const rawMessages = (message.data?.messages ?? []) as any[]
+            const history: ChatMessage[] = rawMessages.map((m) => ({
+              id: m.id,
+              session_id: m.session_id,
+              sender: m.sender,
+              content: m.content,
+              message_type: m.message_type,
+              created_at: m.created_at,
+              metadata: m.metadata ?? {},
+            }))
+            setMessages(history)
+            break
+          }
           case 'message':
             // El mensaje real está en message.data, no en message.data.message
             const chatMessage: ChatMessage = message.data as ChatMessage;

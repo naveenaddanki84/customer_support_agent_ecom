@@ -334,7 +334,7 @@ async def get_admin_customer(customer_id: int) -> dict:
 
 
 @router.get("/users/{user_id}/sessions")
-async def list_user_sessions(user_id: str) -> List[dict]:
+async def list_user_sessions(user_id: str, limit: int = 100) -> List[dict]:
     """List a user's chat sessions (newest first) with a derived title."""
     try:
         rows = await db_manager.execute_query(
@@ -350,8 +350,9 @@ async def list_user_sessions(user_id: str) -> List[dict]:
             FROM sessions s
             WHERE s.user_id = $1
             ORDER BY s.updated_at DESC
+            LIMIT $2
             """,
-            user_id,
+            user_id, limit,
         )
         for row in rows:
             title = (row.get("title") or "New chat").strip()
@@ -366,20 +367,28 @@ async def list_user_sessions(user_id: str) -> List[dict]:
 async def list_escalations(include_resolved: bool = False) -> List[dict]:
     """List refund decisions that were escalated to a human."""
     try:
-        where = "rd.decision = 'escalated'"
-        if not include_resolved:
-            where += " AND rd.resolution IS NULL"
-        return await db_manager.execute_query(
-            f"""
+        pending_query = """
             SELECT rd.id, rd.order_id, rd.session_id, rd.amount, rd.reason,
                    rd.resolution, rd.resolved_by, rd.resolved_at, rd.created_at,
                    o.item, c.name AS customer_name, c.email AS customer_email
             FROM refund_decisions rd
             LEFT JOIN orders o ON o.id = rd.order_id
             LEFT JOIN customers c ON c.id = o.customer_id
-            WHERE {where}
+            WHERE rd.decision = 'escalated' AND rd.resolution IS NULL
             ORDER BY rd.created_at DESC
             """
+        all_query = """
+            SELECT rd.id, rd.order_id, rd.session_id, rd.amount, rd.reason,
+                   rd.resolution, rd.resolved_by, rd.resolved_at, rd.created_at,
+                   o.item, c.name AS customer_name, c.email AS customer_email
+            FROM refund_decisions rd
+            LEFT JOIN orders o ON o.id = rd.order_id
+            LEFT JOIN customers c ON c.id = o.customer_id
+            WHERE rd.decision = 'escalated'
+            ORDER BY rd.created_at DESC
+            """
+        return await db_manager.execute_query(
+            all_query if include_resolved else pending_query
         )
     except Exception as e:
         logger.error(f"Failed to list escalations: {e}")
@@ -390,7 +399,7 @@ async def list_escalations(include_resolved: bool = False) -> List[dict]:
 async def resolve_escalation(decision_id: UUID, body: dict) -> dict:
     """Approve or reject an escalated refund; notify the customer's session."""
     action = (body or {}).get("action")
-    reviewer = (body or {}).get("reviewer") or "admin"
+    reviewer = ((body or {}).get("reviewer") or "admin")[:255]
     if action not in {"approved", "rejected"}:
         raise HTTPException(status_code=400, detail="action must be 'approved' or 'rejected'")
     try:
@@ -398,7 +407,7 @@ async def resolve_escalation(decision_id: UUID, body: dict) -> dict:
             """
             UPDATE refund_decisions
             SET resolution = $2, resolved_by = $3, resolved_at = NOW()
-            WHERE id = $1 AND decision = 'escalated'
+            WHERE id = $1 AND decision = 'escalated' AND resolution IS NULL
             RETURNING id, order_id, session_id, amount
             """,
             decision_id, action, reviewer,

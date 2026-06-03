@@ -37,6 +37,7 @@ async def push_to_session(session_id: str, payload: dict) -> bool:
         return True
     except Exception as e:  # noqa: BLE001 - a dead socket just means no live delivery
         logger.warning(f"push_to_session failed for {session_id}: {e}")
+        _active_connections.pop(str(session_id), None)
         return False
 
 

@@ -37,24 +37,44 @@ export default function ChatPage() {
     const saved = localStorage.getItem('selectedCustomerEmail')
     if (saved) {
       setSelectedEmail(saved)
-      api.createSession(saved).then((s) => setSessionId(s.id)).catch(console.error)
+      const lastSessionId = localStorage.getItem('lastSessionId')
+      if (lastSessionId) {
+        // Resume the previously active session instead of creating a new one
+        setSessionId(lastSessionId)
+      } else {
+        api.createSession(saved).then((s) => {
+          localStorage.setItem('lastSessionId', s.id)
+          setSessionId(s.id)
+        }).catch(() => {})
+      }
     }
   }, [])
 
   const handleSelectUser = async (email: string) => {
     setSelectedEmail(email)
     localStorage.setItem('selectedCustomerEmail', email)
-    const s = await api.createSession(email)
-    setSessionId(s.id)
-    setRefreshKey((k) => k + 1)
+    try {
+      const s = await api.createSession(email)
+      localStorage.setItem('lastSessionId', s.id)
+      setSessionId(s.id)
+      setRefreshKey((k) => k + 1)
+    } catch {
+      // Session creation failed; leave current state intact rather than crashing
+    }
   }
   const handleNewChat = async () => {
     if (!selectedEmail) return
-    const s = await api.createSession(selectedEmail)
-    setSessionId(s.id)
-    setRefreshKey((k) => k + 1)
+    try {
+      const s = await api.createSession(selectedEmail)
+      localStorage.setItem('lastSessionId', s.id)
+      setSessionId(s.id)
+      setRefreshKey((k) => k + 1)
+    } catch {
+      // Session creation failed; leave current state intact rather than crashing
+    }
   }
   const handleSelectSession = (id: string) => {
+    localStorage.setItem('lastSessionId', id)
     setSessionId(id)
     setRefreshKey((k) => k + 1)
   }

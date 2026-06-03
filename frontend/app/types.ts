@@ -26,9 +26,10 @@ export interface ChatMessage {
 }
 
 export interface WebSocketMessage {
-  type: 'message' | 'typing' | 'status' | 'error' | 'system' | 'chat'
+  type: 'message' | 'typing' | 'status' | 'error' | 'system' | 'chat' | 'history'
   data: {
     message?: ChatMessage
+    messages?: ChatMessage[]
     session_id?: string
     status?: ConnectionStatus
     error?: string
