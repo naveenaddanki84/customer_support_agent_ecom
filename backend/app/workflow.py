@@ -3,9 +3,7 @@ LangGraph workflow for multi-agent customer chat system.
 Complete agent orchestration with conditional routing.
 """
 
-import json
 import logging
-from decimal import Decimal
 from typing import Dict, Any, Literal
 from uuid import UUID
 
@@ -15,7 +13,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables.config import RunnableConfig
 
 from app.config import settings
-from app.database import db_manager
+from app.repositories import agent_logs_repo
 from app.agents.router import RouterAgent
 from app.agents.faq import FAQAgent
 from app.agents.refund import RefundAgent
@@ -303,25 +301,17 @@ class ChatWorkflow:
     ) -> None:
         """Persist a per-turn reasoning log for the admin dashboard."""
         routing = ctx.get("routing_decision", {}) or {}
-        score = ctx.get("guardrails_score")
         try:
-            await db_manager.execute_command(
-                """
-                INSERT INTO agent_logs (
-                    session_id, user_message, handling_agent, router_intent,
-                    router_reasoning, refund_decision, guardrails_score,
-                    tool_trace, final_response
-                ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
-                """,
-                str(session_id),
-                user_message,
-                result.get("current_agent"),
-                routing.get("intent"),
-                routing.get("reasoning"),
-                ctx.get("refund_decision"),
-                Decimal(str(score)) if score is not None else None,
-                json.dumps(ctx.get("refund_trace", [])),
-                response_content,
+            await agent_logs_repo.record_turn(
+                session_id=session_id,
+                user_message=user_message,
+                handling_agent=result.get("current_agent"),
+                router_intent=routing.get("intent"),
+                router_reasoning=routing.get("reasoning"),
+                refund_decision=ctx.get("refund_decision"),
+                guardrails_score=ctx.get("guardrails_score"),
+                tool_trace=ctx.get("refund_trace", []),
+                final_response=response_content,
             )
         except Exception as e:  # noqa: BLE001 - logging must never break the chat
             logger.error("Failed to write agent_logs row: %s", e)

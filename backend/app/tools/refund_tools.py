@@ -11,7 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
-from app.database import db_manager
+from app.repositories import customers_repo, orders_repo, policies_repo, refunds_repo
 
 logger = logging.getLogger(__name__)
 
@@ -33,31 +33,18 @@ def _row_to_dict(row: Dict[str, Any]) -> Dict[str, Any]:
 
 async def lookup_customer(email: str) -> Dict[str, Any]:
     """Find a customer by email."""
-    rows = await db_manager.execute_query(
-        "SELECT id, name, email, tier, created_at FROM customers WHERE lower(email) = lower($1)",
-        email.strip(),
-    )
-    if not rows:
+    row = await customers_repo.get_by_email(email)
+    if not row:
         return {"found": False, "message": f"No customer found with email {email}"}
-    return {"found": True, "customer": _row_to_dict(rows[0])}
+    return {"found": True, "customer": _row_to_dict(row)}
 
 
 async def get_order(order_id: str) -> Dict[str, Any]:
     """Fetch a single order with its owning customer's id and email."""
-    rows = await db_manager.execute_query(
-        """
-        SELECT o.id, o.customer_id, c.email AS customer_email, c.name AS customer_name,
-               o.item, o.amount, o.status, o.is_final_sale, o.already_refunded, o.order_date
-        FROM orders o
-        JOIN customers c ON c.id = o.customer_id
-        WHERE upper(o.id) = upper($1)
-        """,
-        order_id.strip(),
-    )
-    if not rows:
+    row = await orders_repo.get_with_customer(order_id)
+    if not row:
         return {"found": False, "message": f"No order found with id {order_id}"}
 
-    row = rows[0]
     order = _row_to_dict(row)
     # Provide the date arithmetic as a fact so the model doesn't have to compute
     # it (LLMs are unreliable at date math). The agent still applies the policy's
@@ -72,28 +59,16 @@ async def get_order(order_id: str) -> Dict[str, Any]:
 
 async def list_customer_orders(email: str) -> Dict[str, Any]:
     """List all orders belonging to the customer with the given email."""
-    rows = await db_manager.execute_query(
-        """
-        SELECT o.id, o.item, o.amount, o.status, o.is_final_sale,
-               o.already_refunded, o.order_date
-        FROM orders o
-        JOIN customers c ON c.id = o.customer_id
-        WHERE lower(c.email) = lower($1)
-        ORDER BY o.order_date DESC
-        """,
-        email.strip(),
-    )
+    rows = await orders_repo.list_by_email(email)
     return {"count": len(rows), "orders": [_row_to_dict(r) for r in rows]}
 
 
 async def get_refund_policy() -> Dict[str, Any]:
     """Return the authoritative refund policy text."""
-    rows = await db_manager.execute_query(
-        "SELECT content FROM policies WHERE name = 'refund_policy'"
-    )
-    if not rows:
+    content = await policies_repo.get_refund_policy()
+    if not content:
         return {"found": False, "message": "Refund policy is not configured"}
-    return {"found": True, "policy": rows[0]["content"]}
+    return {"found": True, "policy": content}
 
 
 async def record_refund_decision(
@@ -113,17 +88,8 @@ async def record_refund_decision(
 
     clean_order_id = order_id.strip() if order_id else None
 
-    rows = await db_manager.execute_query(
-        """
-        INSERT INTO refund_decisions (order_id, session_id, decision, amount, reason)
-        VALUES ($1, $2::uuid, $3, $4, $5)
-        RETURNING id
-        """,
-        clean_order_id,
-        session_id,
-        decision_norm,
-        Decimal(str(amount)) if amount is not None else None,
-        reason,
+    decision_id = await refunds_repo.record(
+        clean_order_id, session_id, decision_norm, amount, reason
     )
     # The deterministic policy guard (in the refund agent) owns the final outcome
     # and the orders.already_refunded marking, so it can correct this row if the
@@ -132,7 +98,7 @@ async def record_refund_decision(
         "recorded": True,
         "order_id": order_id,
         "decision": decision_norm,
-        "decision_id": str(rows[0]["id"]) if rows else None,
+        "decision_id": decision_id,
     }
 
 

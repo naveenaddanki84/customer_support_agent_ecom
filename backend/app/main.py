@@ -15,7 +15,7 @@ from uuid import UUID
 from app.config import settings
 from app.database import db_manager
 from app.cache import cache_manager
-from app.api import router as api_router
+from app.routers import chat_router, admin_router
 from app.websocket import handle_websocket_connection
 
 # Configure logging
@@ -75,7 +75,8 @@ app.add_middleware(
 )
 
 # Include API router
-app.include_router(api_router)
+app.include_router(chat_router)
+app.include_router(admin_router)
 
 
 @app.get("/")

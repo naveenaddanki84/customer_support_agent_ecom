@@ -4,9 +4,17 @@ Simple, efficient data structures for WebSocket communication.
 """
 
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Literal, Optional
 from uuid import UUID
 from pydantic import BaseModel, Field
+
+
+class ResolveEscalationRequest(BaseModel):
+    """Admin decision on an escalated refund."""
+
+    action: Literal["approved", "rejected"]
+    reviewer: str = Field(default="admin", max_length=255)
+    reason: str = Field(default="", max_length=2000)
 
 
 class ChatMessage(BaseModel):

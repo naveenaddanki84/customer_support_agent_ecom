@@ -11,8 +11,8 @@ from datetime import datetime
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from app.database import db_manager
-from app.models import ChatMessage, WebSocketMessage
+from app.models import WebSocketMessage
+from app.repositories import messages_repo
 from app.workflow import chat_workflow
 
 logger = logging.getLogger(__name__)
@@ -41,63 +41,6 @@ async def push_to_session(session_id: str, payload: dict) -> bool:
         return False
 
 
-async def save_message(message: ChatMessage) -> UUID:
-    """Save message to PostgreSQL database."""
-    try:
-        query = """
-            INSERT INTO messages (session_id, sender, content, message_type, metadata)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id
-        """
-        result = await db_manager.execute_query(
-            query,
-            message.session_id,
-            message.sender,
-            message.content,
-            message.message_type,
-            json.dumps(message.metadata)
-        )
-        return result[0]["id"]
-    except Exception as e:
-        logger.error(f"Failed to save message: {e}")
-        raise
-
-
-def _serialize_message(row: dict) -> dict:
-    """Convert a DB message row into a JSON-serialisable dict (UUID/datetime/JSONB)."""
-    metadata = row.get("metadata")
-    if isinstance(metadata, str):
-        try:
-            metadata = json.loads(metadata)
-        except json.JSONDecodeError:
-            metadata = {}
-    created_at = row.get("created_at")
-    return {
-        "id": str(row["id"]),
-        "session_id": str(row["session_id"]),
-        "sender": row["sender"],
-        "content": row["content"],
-        "message_type": row.get("message_type", "text"),
-        "created_at": created_at.isoformat() if created_at else None,
-        "metadata": metadata or {},
-    }
-
-
-async def get_message_history(session_id: UUID, limit: int = 50) -> list:
-    """Get JSON-serialisable message history for a session (chronological order)."""
-    try:
-        query = """
-            SELECT id, session_id, sender, content, message_type, created_at, metadata
-            FROM messages
-            WHERE session_id = $1
-            ORDER BY created_at DESC
-            LIMIT $2
-        """
-        result = await db_manager.execute_query(query, session_id, limit)
-        return [_serialize_message(row) for row in reversed(result)]
-    except Exception as e:
-        logger.error(f"Failed to get message history: {e}")
-        return []
 
 
 async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
@@ -114,7 +57,7 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
         }))
         
         # Send message history
-        history = await get_message_history(session_id)
+        history = await messages_repo.history(session_id)
         if history:
             await websocket.send_text(json.dumps({
                 "type": "history",
@@ -130,14 +73,9 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
             if ws_message.type == "chat":
                 user_content = ws_message.data.get("content", "")
                 # Save user message
-                user_message = ChatMessage(
-                    session_id=session_id,
-                    sender="user",
-                    content=user_content,
-                    metadata=ws_message.data.get("metadata", {})
-                )
-                await save_message(user_message)
-                
+                user_metadata = ws_message.data.get("metadata", {})
+                await messages_repo.insert(session_id, "user", user_content, "text", user_metadata)
+
                 # Send user message back to client
                 logger.info("About to send user message back to client")
                 await websocket.send_text(json.dumps({
@@ -148,7 +86,7 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
                         "content": user_content,
                         "message_type": "text",
                         "created_at": datetime.now().isoformat(),
-                        "metadata": user_message.metadata
+                        "metadata": user_metadata
                     }
                 }))
                 logger.info("User message sent to client")
@@ -161,18 +99,15 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
                     )
                     
                     # Save agent response
-                    agent_message = ChatMessage(
-                        session_id=session_id,
-                        sender="assistant",
-                        content=workflow_result["content"],
-                        metadata={
+                    await messages_repo.insert(
+                        session_id, "assistant", workflow_result["content"], "text",
+                        {
                             "agent": workflow_result["agent"],
                             "reasoning": workflow_result["reasoning"],
                             "decision": workflow_result.get("decision"),
-                            "workflow_processed": True
-                        }
+                            "workflow_processed": True,
+                        },
                     )
-                    await save_message(agent_message)
                     
                     logger.info("About to send workflow response to client")
                     # Send workflow response to client

@@ -10,7 +10,7 @@ from app.agents.base_agent import BaseAgent, AgentResponse
 from app.openai_client import openai_client
 from app.prompts import get_prompt
 from app.app_config import app_config
-from app.database import db_manager
+from app.repositories import knowledge_base_repo
 from app.cache import cache_manager
 
 
@@ -42,13 +42,7 @@ class FAQAgent(BaseAgent):
                 return cached_data
             
             # Load from database
-            query = """
-                SELECT category, question, answer, keywords
-                FROM knowledge_base 
-                WHERE is_active = true
-                ORDER BY category
-            """
-            result = await db_manager.execute_query(query)
+            result = await knowledge_base_repo.list_active()
             
             # Organize by category
             knowledge_base = {}

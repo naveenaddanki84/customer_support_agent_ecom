@@ -17,10 +17,10 @@ from pydantic import BaseModel
 from langgraph.graph import StateGraph, START, END
 
 from app.app_config import app_config
-from app.database import db_manager
 from app.openai_client import openai_client
 from app.policy_guard import reconcile
 from app.prompts import get_prompt
+from app.repositories import orders_repo, refunds_repo
 from app.tools import TOOL_SPECS, execute_tool
 
 logger = logging.getLogger(__name__)
@@ -219,10 +219,7 @@ class RefundAgent:
     @staticmethod
     async def _mark_refunded(order_id: Optional[str]) -> None:
         if order_id:
-            await db_manager.execute_command(
-                "UPDATE orders SET already_refunded = TRUE WHERE upper(id) = upper($1)",
-                str(order_id),
-            )
+            await orders_repo.mark_refunded(str(order_id))
 
     async def _apply_guard(
         self,
@@ -241,9 +238,8 @@ class RefundAgent:
         order_id = order.get("id")
 
         if verdict["overridden"] and decision_id:
-            await db_manager.execute_command(
-                "UPDATE refund_decisions SET decision = $2, reason = $3 WHERE id = $1::uuid",
-                decision_id, final, f"[guard] {verdict['guard_reason']}",
+            await refunds_repo.update_decision(
+                decision_id, final, f"[guard] {verdict['guard_reason']}"
             )
 
         if final == "approved":
