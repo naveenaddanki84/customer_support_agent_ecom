@@ -9,14 +9,18 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Send, Bot, Wifi, WifiOff, Sparkles, MessageCircle, User, Clock } from 'lucide-react'
 import { useChat } from '../hooks/useChat'
 import { ChatMessage, ConnectionStatus } from '../types'
+import Sidebar from './Sidebar'
+import { api } from '../lib/api'
 
 export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [selectedEmail, setSelectedEmail] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [isTyping, setIsTyping] = useState(false)
   const [messageCount, setMessageCount] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
-  const { messages, connectionStatus, sendMessage, createSession, reconnect } = useChat(sessionId)
+  const { messages, connectionStatus, sendMessage, reconnect } = useChat(sessionId)
   
   // Auto-scroll to bottom
   useEffect(() => {
@@ -28,13 +32,32 @@ export default function ChatPage() {
     setMessageCount(messages.length)
   }, [messages])
   
-  // Create session on mount
+  // Bootstrap from localStorage on mount
   useEffect(() => {
-    const userId = 'user-' + Date.now()
-    createSession(userId)
-      .then(setSessionId)
-      .catch(console.error)
-  }, [createSession])
+    const saved = localStorage.getItem('selectedCustomerEmail')
+    if (saved) {
+      setSelectedEmail(saved)
+      api.createSession(saved).then((s) => setSessionId(s.id)).catch(console.error)
+    }
+  }, [])
+
+  const handleSelectUser = async (email: string) => {
+    setSelectedEmail(email)
+    localStorage.setItem('selectedCustomerEmail', email)
+    const s = await api.createSession(email)
+    setSessionId(s.id)
+    setRefreshKey((k) => k + 1)
+  }
+  const handleNewChat = async () => {
+    if (!selectedEmail) return
+    const s = await api.createSession(selectedEmail)
+    setSessionId(s.id)
+    setRefreshKey((k) => k + 1)
+  }
+  const handleSelectSession = (id: string) => {
+    setSessionId(id)
+    setRefreshKey((k) => k + 1)
+  }
   
   // Enhanced typing indicator
   useEffect(() => {
@@ -89,7 +112,17 @@ export default function ChatPage() {
   const statusConfig = getConnectionStatusConfig(connectionStatus)
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="flex h-screen">
+      <Sidebar
+        selectedEmail={selectedEmail}
+        activeSessionId={sessionId}
+        onSelectUser={handleSelectUser}
+        onSelectSession={handleSelectSession}
+        onNewChat={handleNewChat}
+        refreshKey={refreshKey}
+      />
+      <div className="flex-1 overflow-hidden">
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="w-full max-w-4xl h-[90vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden border border-blue-100 bg-white">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 shadow-lg rounded-t-2xl flex-shrink-0">
@@ -270,6 +303,8 @@ export default function ChatPage() {
             <span>Press Enter to send</span>
             <span>Powered by AI Assistant</span>
           </div>
+        </div>
+      </div>
         </div>
       </div>
     </div>
