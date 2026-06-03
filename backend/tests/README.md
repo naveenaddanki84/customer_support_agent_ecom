@@ -14,7 +14,17 @@ Run with the stack up (`docker compose up -d`):
 |------|-------|
 | `test_frontend_endpoints.py` | Integration tests for the chat/admin REST endpoints (customers, user sessions, admin sessions/trace, customer detail, escalation list + resolve). |
 
-Good next additions (no live stack needed — pure unit tests):
-- `policy_guard.reconcile` / `evaluate_order` — the safety-critical decision logic.
-- `app_config` loading + env overrides.
-- `workflow._format_history` — conversation history rendering.
+## Unit tests (`tests/unit/`)
+
+Fast, pure-logic tests — **no live stack, no Docker, no DB**. Run from the repo root:
+
+```bash
+.venv/bin/python -m pytest backend/tests/unit -q
+```
+
+| File | Covers |
+|------|--------|
+| `test_policy_guard.py` | Every refund-policy rule + the "only ever stricter" reconciliation (the safety-critical guard). |
+| `test_app_config.py` | `config.yaml` loading and env overrides. |
+
+Backend deps include `pytest` in the `dev` dependency group (`uv sync` installs it).
