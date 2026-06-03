@@ -144,6 +144,7 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
                         metadata={
                             "agent": workflow_result["agent"],
                             "reasoning": workflow_result["reasoning"],
+                            "decision": workflow_result.get("decision"),
                             "workflow_processed": True
                         }
                     )
@@ -162,6 +163,7 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
                             "metadata": {
                                 "agent": workflow_result["agent"],
                                 "reasoning": workflow_result["reasoning"],
+                                "decision": workflow_result.get("decision"),
                                 "workflow_processed": True
                             }
                         }

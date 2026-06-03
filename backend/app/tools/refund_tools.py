@@ -56,7 +56,18 @@ async def get_order(order_id: str) -> Dict[str, Any]:
     )
     if not rows:
         return {"found": False, "message": f"No order found with id {order_id}"}
-    return {"found": True, "order": _row_to_dict(rows[0])}
+
+    row = rows[0]
+    order = _row_to_dict(row)
+    # Provide the date arithmetic as a fact so the model doesn't have to compute
+    # it (LLMs are unreliable at date math). The agent still applies the policy's
+    # stated window to this number.
+    order_date = row.get("order_date")
+    if isinstance(order_date, datetime):
+        order_date = order_date.date()
+    if isinstance(order_date, date):
+        order["days_since_order"] = (date.today() - order_date).days
+    return {"found": True, "order": order}
 
 
 async def list_customer_orders(email: str) -> Dict[str, Any]:

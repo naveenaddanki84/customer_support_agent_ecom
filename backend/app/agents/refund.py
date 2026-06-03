@@ -37,6 +37,7 @@ class _RefundState(TypedDict):
     messages: List[Dict[str, Any]]
     trace: List[Dict[str, Any]]
     session_id: Optional[str]
+    nudged: bool
 
 
 class RefundAgent:
@@ -54,12 +55,32 @@ class RefundAgent:
         builder = StateGraph(_RefundState)
         builder.add_node("agent", self._agent_node)
         builder.add_node("tools", self._tools_node)
+        builder.add_node("nudge", self._nudge_node)
         builder.add_edge(START, "agent")
         builder.add_conditional_edges(
-            "agent", self._should_continue, {"tools": "tools", "end": END}
+            "agent",
+            self._should_continue,
+            {"tools": "tools", "nudge": "nudge", "end": END},
         )
         builder.add_edge("tools", "agent")
+        builder.add_edge("nudge", "agent")
         return builder.compile()
+
+    @staticmethod
+    def _order_resolved(trace: List[Dict[str, Any]]) -> bool:
+        """True if a valid order was fetched (so a decision is warranted)."""
+        for entry in trace:
+            if entry["tool"] == "get_order":
+                try:
+                    if json.loads(entry["result"]).get("found"):
+                        return True
+                except json.JSONDecodeError:
+                    pass
+        return False
+
+    @staticmethod
+    def _decision_recorded(trace: List[Dict[str, Any]]) -> bool:
+        return any(t["tool"] == "record_refund_decision" for t in trace)
 
     async def _agent_node(self, state: _RefundState) -> Dict[str, Any]:
         """Call the LLM with tools; append its message to the conversation."""
@@ -67,9 +88,32 @@ class RefundAgent:
         return {"messages": state["messages"] + [result["assistant_message"]]}
 
     def _should_continue(self, state: _RefundState) -> str:
-        """Continue to the tools node while the model is still calling tools."""
+        """Drive the loop: run tools, nudge for a missing decision, else end."""
         last_message = state["messages"][-1]
-        return "tools" if last_message.get("tool_calls") else "end"
+        if last_message.get("tool_calls"):
+            return "tools"
+        # If the agent resolved an order but is about to reply without recording
+        # a decision, nudge it once to call record_refund_decision.
+        trace = state.get("trace", [])
+        if (
+            not state.get("nudged")
+            and self._order_resolved(trace)
+            and not self._decision_recorded(trace)
+        ):
+            return "nudge"
+        return "end"
+
+    async def _nudge_node(self, state: _RefundState) -> Dict[str, Any]:
+        """Force a missing decision to be recorded before the final reply."""
+        nudge = {
+            "role": "user",
+            "content": (
+                "Before your final reply you MUST call record_refund_decision exactly "
+                "once with your decision (approved, denied, or escalated), the order id, "
+                "the amount, and a reason citing the relevant policy rule."
+            ),
+        }
+        return {"messages": state["messages"] + [nudge], "nudged": True}
 
     async def _tools_node(self, state: _RefundState) -> Dict[str, Any]:
         """Execute every tool call the model requested and feed results back."""
@@ -112,7 +156,12 @@ class RefundAgent:
 
         try:
             result = await self.graph.ainvoke(
-                {"messages": messages, "trace": [], "session_id": session_id},
+                {
+                    "messages": messages,
+                    "trace": [],
+                    "session_id": session_id,
+                    "nudged": False,
+                },
                 {"recursion_limit": 15},
             )
         except Exception as e:  # noqa: BLE001 - keep the chat alive on loop failure

@@ -290,6 +290,7 @@ class ChatWorkflow:
             "content": response_content,
             "agent": result.get("current_agent", "router"),
             "reasoning": result.get("agent_reasoning", ""),
+            "decision": ctx.get("refund_decision"),
         }
 
     async def _log_turn(
