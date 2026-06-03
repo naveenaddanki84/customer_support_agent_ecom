@@ -131,3 +131,6 @@ docs/
 # Test / tooling artifacts
 .playwright-mcp/
 admin-dashboard.png
+
+# Brainstorm visual companion
+.superpowers/
