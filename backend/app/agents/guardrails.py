@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.agents.base_agent import BaseAgent, AgentResponse
 from app.openai_client import openai_client
+from app.prompts import get_prompt
 
 
 class SafetyAssessment(BaseModel):
@@ -35,15 +36,8 @@ class GuardrailsAgent(BaseAgent):
         super().__init__(agent_type="guardrails")
 
     def get_system_prompt(self) -> str:
-        """Return Guardrails-specific system prompt."""
-        return """You review a customer-service reply before it is sent to the customer.
-
-A reply is SAFE when it is a normal, professional customer-service message. This explicitly includes
-legitimate help with passwords, logins, account access, billing, subscriptions, and API keys — these
-are routine support topics, not security risks.
-
-A reply is UNSAFE only when it contains hate speech, harassment, instructions for wrongdoing,
-leaked secrets or another person's private data, or clearly unprofessional / abusive language."""
+        """Return Guardrails-specific system prompt (versioned)."""
+        return get_prompt("guardrails")
 
     async def process(self, message: str, context: Dict[str, Any]) -> GuardrailsResponse:
         """Validate a candidate reply using an LLM safety judgement."""
@@ -52,13 +46,7 @@ leaked secrets or another person's private data, or clearly unprofessional / abu
 Reply to review:
 \"\"\"{message}\"\"\"
 
-Conversation context: {context or {}}
-
-Assess the reply and return:
-- is_safe: true unless the reply is genuinely harmful or abusive per the rules above
-- has_hallucination: true only if it asserts specific facts that appear fabricated
-- safety_score: 0.0 (clearly unsafe) to 1.0 (clearly safe and professional)
-- reasoning: one short sentence explaining the judgement"""
+Conversation context: {context or {}}"""
 
         assessment = await openai_client.generate_structured(
             prompt=prompt,

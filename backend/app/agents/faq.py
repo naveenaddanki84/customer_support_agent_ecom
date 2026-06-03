@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.agents.base_agent import BaseAgent, AgentResponse
 from app.openai_client import openai_client
+from app.prompts import get_prompt
 from app.database import db_manager
 from app.cache import cache_manager
 
@@ -28,11 +29,8 @@ class FAQAgent(BaseAgent):
         super().__init__(agent_type="faq")
     
     def get_system_prompt(self) -> str:
-        """Return FAQ-specific system prompt."""
-        return """You are a helpful FAQ assistant. Answer customer questions based on our knowledge base.
-
-Provide accurate, helpful responses. If the question is not in our knowledge base, 
-politely redirect to human support."""
+        """Return FAQ-specific system prompt (versioned)."""
+        return get_prompt("faq")
     
     async def _load_knowledge_base(self) -> Dict[str, Any]:
         """Load FAQ knowledge base from database with caching."""
@@ -110,13 +108,7 @@ Knowledge base (authoritative facts — use these for any policy, price, shippin
 {kb_context}
 
 Conversation context: {context or {}}
-Customer message: {message}
-
-How to respond:
-- If the message is a greeting or small talk, reply warmly and briefly, then invite the customer to ask how you can help.
-- If the knowledge base covers the question, answer using it.
-- If it's a genuine question the knowledge base does not cover, give a helpful general answer and offer to connect them with a support agent if they need account-specific help.
-- Be concise, friendly, and professional. Never invent specific policies, prices, or order details that are not in the knowledge base."""
+Customer message: {message}"""
 
         response = await openai_client.generate_text(prompt, temperature=0.5)
 

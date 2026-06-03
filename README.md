@@ -173,6 +173,22 @@ docker-compose.yml   one-command stack
 
 ---
 
+## Prompt versioning
+
+Agent prompts are not hardcoded in Python — they live as versioned text files under `backend/app/prompts/<agent>/<version>.md` and are loaded at runtime by `prompts/registry.py`.
+
+- The active version defaults to `PROMPT_VERSION_DEFAULT` (`v1`).
+- Override per agent with `PROMPT_VERSION_<AGENT>`, e.g. `PROMPT_VERSION_FAQ=v2`.
+- Add a new version by dropping a new `.md` file (e.g. `refund/v2.md`) and pointing the env var at it — no code change.
+- `GET /api/v1/admin/prompts` lists each agent's active and available versions.
+
+```bash
+# run the FAQ agent on its v2 persona, everything else on v1
+PROMPT_VERSION_FAQ=v2 docker compose up -d backend
+```
+
+A sample `faq/v2.md` ("Pixel" persona) ships as a worked example.
+
 ## Configuration
 
 | Variable | Description | Default |

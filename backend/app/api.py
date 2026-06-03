@@ -185,6 +185,21 @@ async def get_refund_decisions(limit: int = 100) -> List[dict]:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/admin/prompts")
+async def get_prompt_versions() -> List[dict]:
+    """List each agent's available prompt versions and the active one."""
+    from app.prompts import active_version, available_versions, list_agents
+
+    return [
+        {
+            "agent": agent,
+            "active": active_version(agent),
+            "versions": available_versions(agent),
+        }
+        for agent in list_agents()
+    ]
+
+
 @router.get("/admin/stats")
 async def get_admin_stats() -> dict:
     """Return high-level counts for the admin dashboard."""

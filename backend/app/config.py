@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # AI configuration
     openai_api_key: Optional[str] = None
     openai_model: str = "gpt-4o-mini"
+
+    # Prompt versioning (per-agent override via PROMPT_VERSION_<AGENT>)
+    prompt_version_default: str = "v1"
     
     # Application configuration
     environment: Optional[str] = None

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app.agents.base_agent import BaseAgent, AgentResponse
 from app.openai_client import openai_client
+from app.prompts import get_prompt
 
 
 class EscalationResponse(BaseModel):
@@ -34,24 +35,15 @@ class EscalationAgent(BaseAgent):
         super().__init__(agent_type="escalation")
 
     def get_system_prompt(self) -> str:
-        """Return Escalation-specific system prompt."""
-        return """You are an escalation coordinator who prepares a customer for human handoff.
-
-Write a professional message that acknowledges the escalation, explains what happens next, and gives an estimated wait time. Then classify the escalation."""
+        """Return Escalation-specific system prompt (versioned)."""
+        return get_prompt("escalation")
 
     async def process(self, message: str, context: Dict[str, Any]) -> EscalationResponse:
         """Process an escalation request and prepare the human handoff."""
         prompt = f"""{self.get_system_prompt()}
 
 Customer message: {message}
-Context: {context or {}}
-
-Return:
-- content: a professional message to the customer that (1) acknowledges the escalation, (2) explains what will happen next, and (3) gives an estimated wait time.
-- escalation_reason: a short snake_case reason (e.g. urgent_issue, customer_complaint, complex_issue, general_support).
-- priority: one of "high", "medium", or "normal" based on urgency expressed in the message and context.
-
-Write the message as the store's support team — do NOT add signature placeholders like "[Your Name]" or sign off with a personal name."""
+Context: {context or {}}"""
 
         decision = await openai_client.generate_structured(
             prompt=prompt,

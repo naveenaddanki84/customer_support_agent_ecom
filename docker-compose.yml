@@ -47,6 +47,13 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL}
       ENVIRONMENT: ${ENVIRONMENT}
+      # Prompt versioning (empty -> falls back to the in-code default "v1")
+      PROMPT_VERSION_DEFAULT: ${PROMPT_VERSION_DEFAULT:-v1}
+      PROMPT_VERSION_ROUTER: ${PROMPT_VERSION_ROUTER:-}
+      PROMPT_VERSION_REFUND: ${PROMPT_VERSION_REFUND:-}
+      PROMPT_VERSION_FAQ: ${PROMPT_VERSION_FAQ:-}
+      PROMPT_VERSION_GUARDRAILS: ${PROMPT_VERSION_GUARDRAILS:-}
+      PROMPT_VERSION_ESCALATION: ${PROMPT_VERSION_ESCALATION:-}
     depends_on:
       postgres:
         condition: service_healthy

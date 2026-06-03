@@ -11,6 +11,7 @@ from app.agents.faq import FAQAgent
 from app.agents.refund import RefundAgent
 from app.agents.escalation import EscalationAgent
 from app.agents.guardrails import GuardrailsAgent
+from app.prompts import get_prompt
 
 
 class RoutingDecision(BaseModel):
@@ -33,56 +34,22 @@ class RouterAgent(BaseAgent):
         self.guardrails_agent = GuardrailsAgent()
     
     def get_system_prompt(self) -> str:
-        """Return router-specific system prompt."""
-        return """You are a customer service router agent. Analyze user messages and classify their intent.
+        """Return router-specific system prompt (versioned)."""
+        return get_prompt("router")
 
-Your task is to:
-1. Understand the user's intent from their message
-2. Determine confidence level (0.0 to 1.0)
-3. Route to the appropriate agent
-4. Provide clear reasoning
-
-Available agents:
-- faq: For common questions, store/shipping/return policy info, general help, and greetings
-- refund: For any refund request — when a customer asks to return an item, get money back, or check refund eligibility for an order
-- escalation: For complaints, urgent issues, or unsatisfied customers wanting a human
-
-Respond with:
-- content: A helpful response to the user
-- confidence: Your confidence in the classification (0.0-1.0)
-- agent_type: Always "router"
-- reasoning: Brief explanation of your decision
-
-Be professional, helpful, and accurate in your classification."""
-    
     async def classify_intent(
         self,
         user_message: str,
         context: Optional[Dict[str, Any]] = None
     ) -> RoutingDecision:
         """Classify user intent and determine routing decision."""
-        # Build classification prompt with clear JSON instructions
-        prompt = f"""Analyze this user message and provide routing decision.
+        # Versioned classification guidance + the dynamic message/context.
+        prompt = (
+            f"{self.get_system_prompt()}\n\n"
+            f"User message: {user_message}\n"
+            f"Context: {context or {}}"
+        )
 
-User message: {user_message}
-Context: {context or {}}
-
-Respond with a valid JSON object containing:
-- intent: The classified intent (string)
-- confidence: Confidence level (float between 0.0-1.0)
-- next_agent: Which agent should handle this (faq/refund/escalation)
-- reasoning: Brief explanation of your decision (string)
-
-Example response format:
-{{
-  "intent": "refund_request",
-  "confidence": 0.92,
-  "next_agent": "refund",
-  "reasoning": "User wants a refund for order ORD-1001"
-}}
-
-Provide only the JSON object, no markdown formatting."""
-        
         # Generate structured routing decision
         decision = await self.client.generate_structured(
             prompt=prompt,
