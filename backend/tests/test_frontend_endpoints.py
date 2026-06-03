@@ -46,8 +46,28 @@ def test_user_sessions():
           any(row["id"] == s["id"] for row in data), str(data[:2]))
 
 
+def test_admin_sessions():
+    status, data = get("/api/v1/admin/sessions?limit=50")
+    check("admin sessions 200", status == 200, str(status))
+    check("admin session shape", not data or {"id", "user_id", "message_count"} <= set(data[0]),
+          str(data[:1]))
+
+
+def test_admin_session_detail():
+    _, sessions = get("/api/v1/admin/sessions?limit=1")
+    if not sessions:
+        check("admin session detail (no sessions yet)", True)
+        return
+    sid = sessions[0]["id"]
+    status, data = get(f"/api/v1/admin/sessions/{sid}")
+    check("admin session detail 200", status == 200, str(status))
+    check("detail has messages+logs", {"messages", "logs"} <= set(data), str(list(data)))
+
+
 if __name__ == "__main__":
     test_customers()
     test_user_sessions()
+    test_admin_sessions()
+    test_admin_session_detail()
     print("\nDONE" + (" — FAILURES: " + ",".join(_failures) if _failures else " — all passed"))
     sys.exit(1 if _failures else 0)

@@ -232,6 +232,67 @@ async def list_customers() -> List[dict]:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/admin/sessions")
+async def list_admin_sessions(limit: int = 100) -> List[dict]:
+    """List recent sessions with turn counts and an escalation flag."""
+    try:
+        return await db_manager.execute_query(
+            """
+            SELECT s.id, s.user_id, s.status, s.created_at, s.updated_at,
+                   (SELECT count(*) FROM messages m WHERE m.session_id = s.id) AS message_count,
+                   EXISTS (SELECT 1 FROM agent_logs al WHERE al.session_id = s.id
+                           AND al.refund_decision = 'escalated') AS has_escalation,
+                   (SELECT max(al.created_at) FROM agent_logs al WHERE al.session_id = s.id) AS last_activity
+            FROM sessions s
+            ORDER BY s.updated_at DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+    except Exception as e:
+        logger.error(f"Failed to list admin sessions: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/admin/sessions/{session_id}")
+async def get_admin_session(session_id: UUID) -> dict:
+    """Return a session's messages and per-turn reasoning logs for the trace view."""
+    try:
+        messages = await db_manager.execute_query(
+            """
+            SELECT id, sender, content, message_type, created_at, metadata
+            FROM messages WHERE session_id = $1 ORDER BY created_at ASC
+            """,
+            session_id,
+        )
+        for m in messages:
+            md = m.get("metadata")
+            if isinstance(md, str):
+                try:
+                    m["metadata"] = json.loads(md)
+                except json.JSONDecodeError:
+                    m["metadata"] = {}
+        logs = await db_manager.execute_query(
+            """
+            SELECT id, user_message, handling_agent, router_intent, router_reasoning,
+                   refund_decision, guardrails_score, tool_trace, final_response, created_at
+            FROM agent_logs WHERE session_id = $1 ORDER BY created_at ASC
+            """,
+            session_id,
+        )
+        for row in logs:
+            trace = row.get("tool_trace")
+            if isinstance(trace, str):
+                try:
+                    row["tool_trace"] = json.loads(trace)
+                except json.JSONDecodeError:
+                    row["tool_trace"] = []
+        return {"session_id": str(session_id), "messages": messages, "logs": logs}
+    except Exception as e:
+        logger.error(f"Failed to get admin session: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/users/{user_id}/sessions")
 async def list_user_sessions(user_id: str) -> List[dict]:
     """List a user's chat sessions (newest first) with a derived title."""
