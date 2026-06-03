@@ -149,9 +149,20 @@ The mock CRM seeds 15 customers and 25 orders covering every edge case. Try thes
 
 ---
 
+## Chat — user switcher & history
+
+The chat at http://localhost:3000 has a sidebar to **switch between the 15 seeded customers** and see that customer's **past chats**. Selecting a customer sets `user_id` to their email (so refund ownership stays coherent); clicking a past chat **resumes** it — messages reload and the Postgres-checkpointed agent memory comes back. Backed by `GET /api/v1/customers` and `GET /api/v1/users/{user_id}/sessions`.
+
 ## Admin dashboard
 
-http://localhost:3000/admin shows, for every turn: the router's intent, the handling agent, the refund decision, the guardrails safety score, and the **complete tool-call trace** (each tool, its arguments, and its result) plus the final response. Backed by `GET /api/v1/admin/logs`, `/admin/refund-decisions`, and `/admin/stats`.
+http://localhost:3000/admin is organized into tabs:
+
+- **Overview** — per-turn reasoning logs: router intent, handling agent, refund decision, guardrails safety score, and the **complete tool-call trace** plus the final response.
+- **Escalations** — a human-in-the-loop queue of refunds the agent escalated (over $500). **Approve/Reject** finalizes the decision (`resolution` on `refund_decisions`) and **pushes a live notification into the customer's chat** ("A specialist has approved your refund for ORD-1003").
+- **Sessions** — all conversations; "View trace" opens **`/admin/sessions/<id>`** in a new tab with the conversation + every turn's reasoning and tool calls.
+- **Customers** — a per-customer profile: orders, refund history (with resolution status), and sessions.
+
+Endpoints: `GET /api/v1/admin/{logs,refund-decisions,stats,prompts,sessions,escalations}`, `GET /api/v1/admin/sessions/{id}`, `GET /api/v1/admin/customers/{id}`, `POST /api/v1/admin/escalations/{id}/resolve`. Live notifications use an in-memory WebSocket connection registry (single-instance).
 
 ---
 
