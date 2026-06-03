@@ -3,12 +3,15 @@
     docker compose up -d
     .venv/bin/python backend/tests/test_frontend_endpoints.py
 """
+import asyncio
 import json
 import os
 import sys
 import urllib.request
+import websockets  # noqa: E402
 
 API = os.getenv("API_BASE", "http://localhost:8000")
+WS = API.replace("http", "ws", 1)
 _failures = []
 
 
@@ -73,11 +76,40 @@ def test_admin_customer_detail():
           str(len(data.get("orders", []))))
 
 
+def test_escalations_list_and_resolve():
+    status, esc = get("/api/v1/admin/escalations")
+    check("escalations 200", status == 200, str(status))
+    if not esc:
+        _, s = post("/api/v1/sessions", {"user_id": "bob.smith@example.com"})
+        asyncio.run(_chat(s["id"], "Refund ORD-1003, my email is bob.smith@example.com."))
+        _, esc = get("/api/v1/admin/escalations")
+    check("at least one escalation", len(esc) >= 1, str(len(esc)))
+    if not esc:
+        return
+    item = esc[0]
+    check("escalation shape", {"id", "order_id", "amount", "reason"} <= set(item), str(list(item)))
+    status, res = post(f"/api/v1/admin/escalations/{item['id']}/resolve",
+                       {"action": "approved", "reviewer": "tester"})
+    check("resolve 200", status == 200, str(status))
+    check("resolve marks resolution", res.get("resolution") == "approved", str(res))
+
+
+async def _chat(sid, text):
+    async with websockets.connect(f"{WS}/ws/{sid}", open_timeout=15) as ws:
+        await ws.send(json.dumps({"type": "chat", "data": {"content": text}}))
+        while True:
+            m = json.loads(await asyncio.wait_for(ws.recv(), timeout=90))
+            d = m.get("data") or {}
+            if m.get("type") == "message" and d.get("sender") == "assistant":
+                return
+
+
 if __name__ == "__main__":
     test_customers()
     test_user_sessions()
     test_admin_sessions()
     test_admin_session_detail()
     test_admin_customer_detail()
+    test_escalations_list_and_resolve()
     print("\nDONE" + (" — FAILURES: " + ",".join(_failures) if _failures else " — all passed"))
     sys.exit(1 if _failures else 0)

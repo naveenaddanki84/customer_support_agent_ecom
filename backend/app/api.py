@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.database import db_manager
 from app.models import SessionCreate, SessionResponse, ChatMessage
+from app.websocket import push_to_session
 
 logger = logging.getLogger(__name__)
 
@@ -358,4 +359,76 @@ async def list_user_sessions(user_id: str) -> List[dict]:
         return rows
     except Exception as e:
         logger.error(f"Failed to list user sessions: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/admin/escalations")
+async def list_escalations(include_resolved: bool = False) -> List[dict]:
+    """List refund decisions that were escalated to a human."""
+    try:
+        where = "rd.decision = 'escalated'"
+        if not include_resolved:
+            where += " AND rd.resolution IS NULL"
+        return await db_manager.execute_query(
+            f"""
+            SELECT rd.id, rd.order_id, rd.session_id, rd.amount, rd.reason,
+                   rd.resolution, rd.resolved_by, rd.resolved_at, rd.created_at,
+                   o.item, c.name AS customer_name, c.email AS customer_email
+            FROM refund_decisions rd
+            LEFT JOIN orders o ON o.id = rd.order_id
+            LEFT JOIN customers c ON c.id = o.customer_id
+            WHERE {where}
+            ORDER BY rd.created_at DESC
+            """
+        )
+    except Exception as e:
+        logger.error(f"Failed to list escalations: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/admin/escalations/{decision_id}/resolve")
+async def resolve_escalation(decision_id: UUID, body: dict) -> dict:
+    """Approve or reject an escalated refund; notify the customer's session."""
+    action = (body or {}).get("action")
+    reviewer = (body or {}).get("reviewer") or "admin"
+    if action not in {"approved", "rejected"}:
+        raise HTTPException(status_code=400, detail="action must be 'approved' or 'rejected'")
+    try:
+        rows = await db_manager.execute_query(
+            """
+            UPDATE refund_decisions
+            SET resolution = $2, resolved_by = $3, resolved_at = NOW()
+            WHERE id = $1 AND decision = 'escalated'
+            RETURNING id, order_id, session_id, amount
+            """,
+            decision_id, action, reviewer,
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Escalated decision not found")
+        row = rows[0]
+
+        verb = "approved" if action == "approved" else "declined"
+        note = f"A specialist has {verb} your refund request for order {row['order_id']}."
+        if row.get("session_id"):
+            await db_manager.execute_command(
+                """INSERT INTO messages (session_id, sender, content, message_type, metadata)
+                   VALUES ($1, 'assistant', $2, 'text', $3)""",
+                row["session_id"], note,
+                json.dumps({"agent": "human", "decision": action, "escalation_resolved": True}),
+            )
+            await push_to_session(str(row["session_id"]), {
+                "type": "message",
+                "data": {
+                    "session_id": str(row["session_id"]),
+                    "sender": "assistant",
+                    "content": note,
+                    "message_type": "text",
+                    "metadata": {"agent": "human", "decision": action},
+                },
+            })
+        return {"id": str(row["id"]), "resolution": action, "order_id": row["order_id"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to resolve escalation: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
