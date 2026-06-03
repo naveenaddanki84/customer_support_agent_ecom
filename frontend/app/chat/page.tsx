@@ -142,10 +142,10 @@ export default function ChatPage() {
         refreshKey={refreshKey}
       />
       <div className="flex-1 overflow-hidden">
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl h-[90vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden border border-blue-100 bg-white">
+        <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-white flex items-center justify-center p-4">
+      <div className="w-full max-w-4xl h-[90vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden border border-green-100 bg-white">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 shadow-lg rounded-t-2xl flex-shrink-0">
+        <div className="bg-gradient-to-r from-green-600 to-green-700 text-white p-6 shadow-lg rounded-t-2xl flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="relative">
@@ -158,7 +158,7 @@ export default function ChatPage() {
                 <h1 className="text-2xl font-bold">
                   Virtual Assistant
                 </h1>
-                <p className="text-blue-100 text-sm flex items-center gap-2">
+                <p className="text-green-100 text-sm flex items-center gap-2">
                   <Sparkles className="w-4 h-4" />
                   24/7 intelligent support
                 </p>
@@ -172,7 +172,7 @@ export default function ChatPage() {
                   {statusConfig.icon}
                   <span className="text-sm font-medium">{statusConfig.text}</span>
                 </div>
-                <div className="text-xs text-blue-100 mt-1">
+                <div className="text-xs text-green-100 mt-1">
                   {messageCount} messages
                 </div>
               </div>
@@ -201,7 +201,7 @@ export default function ChatPage() {
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <div className="p-8 bg-white/80 backdrop-blur-sm rounded-3xl border border-gray-200 shadow-lg">
-                <MessageCircle className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+                <MessageCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-800 mb-2">
                   Welcome to chat!
                 </h3>
@@ -223,7 +223,7 @@ export default function ChatPage() {
                   }`}
                 >
                   {message.sender === 'bot' && (
-                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
                       <Bot className="w-5 h-5 text-white" />
                     </div>
                   )}
@@ -232,7 +232,7 @@ export default function ChatPage() {
                     <div
                       className={`p-4 rounded-2xl shadow-sm border ${
                         message.sender === 'user'
-                          ? 'bg-blue-500 text-white border-blue-500'
+                          ? 'bg-green-500 text-white border-green-500'
                           : 'bg-white text-gray-800 border-gray-200'
                       }`}
                     >
@@ -247,7 +247,7 @@ export default function ChatPage() {
                         {formatTime(message.created_at)}
                       </span>
                       {message.metadata?.agent_name && (
-                        <span className="text-xs text-blue-500 font-medium">
+                        <span className="text-xs text-green-500 font-medium">
                           • {message.metadata.agent_name}
                         </span>
                       )}
@@ -265,14 +265,14 @@ export default function ChatPage() {
               {/* Typing Indicator */}
               {isTyping && (
                 <div className="flex items-start gap-3 animate-fadeIn">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
                     <Bot className="w-5 h-5 text-white" />
                   </div>
                   <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
                     <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                       <span className="text-sm text-gray-500 ml-2">Typing...</span>
                     </div>
                   </div>
@@ -286,7 +286,7 @@ export default function ChatPage() {
 
         {/* Input Area */}
         <div className="border-t border-gray-200 bg-white p-4 flex-shrink-0">
-          <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-200 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+          <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20 transition-all">
             <MessageCircle className="w-5 h-5 text-gray-400" />
             <input
               type="text"
@@ -313,7 +313,7 @@ export default function ChatPage() {
                 }
               }}
               disabled={connectionStatus !== 'connected'}
-              className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send className="w-5 h-5" />
             </button>

@@ -18,7 +18,7 @@ export default function AdminPage() {
           <h1 className="text-lg font-bold text-gray-800">Admin Dashboard</h1>
           <p className="text-xs text-gray-500">Agent reasoning, escalations &amp; customers</p>
         </div>
-        <a href="/chat" className="text-sm text-blue-600 hover:underline">← Chat</a>
+        <a href="/chat" className="text-sm text-green-600 hover:underline">← Chat</a>
       </header>
       <nav className="flex gap-1 border-b border-gray-200 bg-white px-4">
         {TABS.map((t) => (
@@ -26,7 +26,7 @@ export default function AdminPage() {
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm ${
-              tab === t ? 'border-b-2 border-blue-500 font-medium text-blue-600' : 'text-gray-500'
+              tab === t ? 'border-b-2 border-green-500 font-medium text-green-600' : 'text-gray-500'
             }`}
           >
             {t}

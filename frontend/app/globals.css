@@ -29,7 +29,7 @@
   }
   
   .chat-header {
-    @apply bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-center justify-between shadow-lg;
+    @apply bg-gradient-to-r from-green-600 to-green-700 text-white p-6 flex items-center justify-between shadow-lg;
   }
   
   .chat-messages {
@@ -41,7 +41,7 @@
   }
   
   .chat-bubble-user {
-    @apply bg-blue-500 text-white border-blue-500 ml-auto;
+    @apply bg-green-500 text-white border-green-500 ml-auto;
   }
   
   .chat-bubble-bot {
@@ -53,7 +53,7 @@
   }
   
   .chat-input {
-    @apply w-full flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-200 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all;
+    @apply w-full flex items-center gap-3 bg-gray-50 rounded-xl p-3 border border-gray-200 focus-within:border-green-500 focus-within:ring-2 focus-within:ring-green-500/20 transition-all;
   }
   
   .input-field {
@@ -61,7 +61,7 @@
   }
   
   .send-button {
-    @apply p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
   }
   
   .connection-status {
@@ -81,7 +81,7 @@
   }
   
   .typing-dot {
-    @apply w-2 h-2 bg-blue-500 rounded-full animate-bounce;
+    @apply w-2 h-2 bg-green-500 rounded-full animate-bounce;
   }
   
   .message-avatar {
@@ -89,7 +89,7 @@
   }
   
   .message-avatar-bot {
-    @apply bg-blue-500 text-white;
+    @apply bg-green-500 text-white;
   }
   
   .message-avatar-user {
@@ -101,7 +101,7 @@
   }
   
   .agent-badge {
-    @apply text-xs text-blue-500 font-medium;
+    @apply text-xs text-green-500 font-medium;
   }
 }
 
@@ -156,7 +156,7 @@
 /* Hover effects */
 .chat-bubble-user:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 8px 20px rgba(34, 197, 94, 0.2);
 }
 
 .chat-bubble-bot:hover {
@@ -167,7 +167,7 @@
 /* Button hover effects */
 .send-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
 }
 
 /* Status indicator animations */
@@ -199,7 +199,7 @@
 
 /* Focus states */
 .chat-input:focus-within {
-  @apply border-blue-500 ring-2 ring-blue-500/20;
+  @apply border-green-500 ring-2 ring-green-500/20;
 }
 
 .input-field:focus {

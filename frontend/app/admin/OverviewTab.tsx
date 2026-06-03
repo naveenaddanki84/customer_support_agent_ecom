@@ -25,7 +25,7 @@ const decisionColor: Record<string, string> = {
 }
 
 const agentColor: Record<string, string> = {
-  refund: 'bg-blue-100 text-blue-700',
+  refund: 'bg-green-100 text-green-700',
   faq: 'bg-purple-100 text-purple-700',
   escalation: 'bg-amber-100 text-amber-700',
 }
@@ -94,7 +94,7 @@ function LogRow({ log }: { log: AgentLog }) {
               <ol className="mt-1 space-y-2">
                 {log.tool_trace.map((call, i) => (
                   <li key={i} className="rounded-lg bg-gray-50 p-3">
-                    <div className="font-mono text-xs font-semibold text-blue-700">
+                    <div className="font-mono text-xs font-semibold text-green-700">
                       {i + 1}. {call.tool}({JSON.stringify(call.args)})
                     </div>
                     <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-words text-xs text-gray-600">
@@ -151,7 +151,7 @@ export default function OverviewTab() {
           <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
           Auto-refresh
         </label>
-        <button onClick={load} className="rounded-lg bg-blue-500 px-3 py-1.5 text-sm text-white hover:bg-blue-600">
+        <button onClick={load} className="rounded-lg bg-green-500 px-3 py-1.5 text-sm text-white hover:bg-green-600">
           Refresh
         </button>
       </div>

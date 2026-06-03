@@ -18,7 +18,7 @@ export default function CustomersTab() {
             key={c.id}
             onClick={() => open(c.id)}
             className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${
-              detail?.customer?.id === c.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700'
+              detail?.customer?.id === c.id ? 'bg-green-50 text-green-700' : 'hover:bg-gray-100 text-gray-700'
             }`}
           >
             {c.name} <span className="text-xs text-gray-400">· {c.tier}</span>
@@ -56,7 +56,7 @@ export default function CustomersTab() {
               <div className="mb-1 text-xs font-semibold uppercase text-gray-400">Sessions ({detail.sessions.length})</div>
               {detail.sessions.map((s: any) => (
                 <a key={s.id} href={`/admin/sessions/${s.id}`} target="_blank" rel="noopener noreferrer"
-                   className="block text-blue-600 hover:underline">{s.id}</a>
+                   className="block text-green-600 hover:underline">{s.id}</a>
               ))}
             </div>
           </div>

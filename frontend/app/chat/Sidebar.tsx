@@ -46,7 +46,7 @@ export default function Sidebar({
         <button
           onClick={onNewChat}
           disabled={!selectedEmail}
-          className="w-full rounded-lg bg-blue-500 px-3 py-2 text-sm text-white hover:bg-blue-600 disabled:opacity-50"
+          className="w-full rounded-lg bg-green-500 px-3 py-2 text-sm text-white hover:bg-green-600 disabled:opacity-50"
         >
           + New chat
         </button>
@@ -63,7 +63,7 @@ export default function Sidebar({
               key={s.id}
               onClick={() => onSelectSession(s.id)}
               className={`block w-full border-l-2 px-3 py-2 text-left text-sm ${
-                active ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'
+                active ? 'border-green-500 bg-green-50' : 'border-transparent hover:bg-gray-100'
               }`}
             >
               <div className="truncate text-gray-800">{s.title}</div>

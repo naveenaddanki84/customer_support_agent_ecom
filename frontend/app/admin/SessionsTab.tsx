@@ -25,7 +25,7 @@ export default function SessionsTab() {
             href={`/admin/sessions/${s.id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
+            className="text-green-600 hover:underline"
           >View trace →</a>
         </div>
       ))}
