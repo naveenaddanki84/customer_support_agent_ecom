@@ -224,8 +224,8 @@ async def get_admin_stats() -> dict:
 @router.get("/agent")
 async def get_agent_info() -> dict:
     """Return the assistant's name and a welcome message for new chats."""
-    from app.config import settings
-    name = settings.agent_name
+    from app.app_config import app_config
+    name = app_config.agent_name
     return {
         "name": name,
         "welcome": (
@@ -426,10 +426,10 @@ async def list_escalations(include_resolved: bool = False) -> List[dict]:
 
 async def _compose_resolution_reply(order_id: str, amount, action: str, admin_reason: str) -> str:
     """Have the named agent compose a customer reply for a resolved escalation."""
-    from app.config import settings
+    from app.app_config import app_config
     from app.openai_client import openai_client
 
-    name = settings.agent_name
+    name = app_config.agent_name
     verb = "approved" if action == "approved" else "could not be approved"
     amount_txt = f" (${amount})" if amount is not None else ""
     prompt = (

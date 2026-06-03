@@ -16,7 +16,10 @@ from pydantic import BaseModel
 
 from langgraph.graph import StateGraph, START, END
 
+from app.app_config import app_config
+from app.database import db_manager
 from app.openai_client import openai_client
+from app.policy_guard import reconcile
 from app.prompts import get_prompt
 from app.tools import TOOL_SPECS, execute_tool
 
@@ -176,16 +179,30 @@ class RefundAgent:
         )
         trace = result.get("trace", [])
 
-        # Extract the recorded decision (if any) from the tool trace.
+        # Extract the model's recorded decision (+ row id) and the resolved order.
         decision: Optional[str] = None
+        decision_id: Optional[str] = None
+        order: Optional[Dict[str, Any]] = None
         for entry in trace:
-            if entry["tool"] == "record_refund_decision":
-                try:
-                    payload = json.loads(entry["result"])
-                    if payload.get("recorded"):
-                        decision = payload.get("decision")
-                except json.JSONDecodeError:
-                    pass
+            try:
+                payload = json.loads(entry["result"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if entry["tool"] == "record_refund_decision" and payload.get("recorded"):
+                decision = payload.get("decision")
+                decision_id = payload.get("decision_id")
+            elif entry["tool"] == "get_order" and payload.get("found"):
+                order = payload.get("order")
+
+        # Deterministic guard: never let the model approve a refund the order data
+        # forbids (over threshold, already refunded, final sale, outside window, etc.).
+        if order is not None and decision is not None:
+            decision, final_message = await self._apply_guard(
+                decision, decision_id, order, final_message
+            )
+        elif decision == "approved" and order:
+            # approved with no guard override -> mark the order refunded
+            await self._mark_refunded(order.get("id"))
 
         reasoning = (
             f"Refund decision: {decision}" if decision else "Handled refund inquiry"
@@ -198,3 +215,54 @@ class RefundAgent:
             reasoning=reasoning,
             trace=trace,
         )
+
+    @staticmethod
+    async def _mark_refunded(order_id: Optional[str]) -> None:
+        if order_id:
+            await db_manager.execute_command(
+                "UPDATE orders SET already_refunded = TRUE WHERE upper(id) = upper($1)",
+                str(order_id),
+            )
+
+    async def _apply_guard(
+        self,
+        llm_decision: str,
+        decision_id: Optional[str],
+        order: Dict[str, Any],
+        llm_message: str,
+    ) -> tuple[str, str]:
+        """Reconcile the model decision with the deterministic guard.
+
+        Returns the (final_decision, final_message). On override, corrects the
+        audit row and substitutes a clear, policy-grounded message.
+        """
+        verdict = reconcile(llm_decision, order)
+        final = verdict["decision"]
+        order_id = order.get("id")
+
+        if verdict["overridden"] and decision_id:
+            await db_manager.execute_command(
+                "UPDATE refund_decisions SET decision = $2, reason = $3 WHERE id = $1::uuid",
+                decision_id, final, f"[guard] {verdict['guard_reason']}",
+            )
+
+        if final == "approved":
+            await self._mark_refunded(order_id)
+
+        if not verdict["overridden"]:
+            return final, llm_message
+
+        name = app_config.agent_name
+        if final == "escalated":
+            msg = (
+                f"Thanks for your patience. Your refund request for order {order_id} is above "
+                f"our ${app_config.refund_policy.escalation_threshold_usd:.0f} limit, so I've "
+                f"routed it to a human specialist for approval. You'll hear back shortly. — {name}"
+            )
+        else:  # denied
+            msg = (
+                f"I'm sorry, but the refund for order {order_id} can't be approved: "
+                f"{verdict['guard_reason']} If you think this is a mistake, I can connect you "
+                f"with a specialist. — {name}"
+            )
+        return final, msg

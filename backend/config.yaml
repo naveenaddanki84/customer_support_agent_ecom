@@ -1,0 +1,17 @@
+# Application configuration (non-secret, tunable settings).
+# Secrets (OPENAI_API_KEY, database credentials) stay in environment variables / .env.
+# Any value here can be overridden by an environment variable (see app_config.py).
+
+agent:
+  # The assistant's display name / persona.
+  name: Remi
+
+refund_policy:
+  # Refunds above this amount (USD) must be escalated to a human, never auto-approved.
+  escalation_threshold_usd: 500
+  # An order is refundable only within this many days of its order date.
+  refund_window_days: 30
+  # Order statuses that are eligible for a refund.
+  refundable_statuses:
+    - delivered
+    - shipped
