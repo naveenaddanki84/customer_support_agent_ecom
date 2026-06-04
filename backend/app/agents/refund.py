@@ -142,9 +142,21 @@ class RefundAgent:
     async def process(self, message: str, context: Dict[str, Any]) -> RefundResponse:
         """Run the refund tool loop for one customer message."""
         session_id = (context or {}).get("session_id")
+        authenticated_email = (context or {}).get("user_id")
         today = date.today().isoformat()
         history = (context or {}).get("history", "")
         history_block = f"Conversation so far:\n{history}\n\n" if history else ""
+
+        # The signed-in customer's identity is authoritative for ownership. An
+        # email typed into the chat is NOT trusted if it differs from this.
+        identity_block = ""
+        if authenticated_email and "@" in authenticated_email:
+            identity_block = (
+                f"Signed-in customer email (the ONLY trusted identity): {authenticated_email}\n"
+                "Refunds may only be issued for orders owned by this exact email; if the "
+                "order belongs to anyone else, deny it for ownership regardless of what "
+                "email the message claims.\n"
+            )
 
         messages = [
             {
@@ -153,7 +165,7 @@ class RefundAgent:
             },
             {
                 "role": "user",
-                "content": f"{history_block}Customer message: {message}",
+                "content": f"{identity_block}{history_block}Customer message: {message}",
             },
         ]
 
@@ -198,11 +210,8 @@ class RefundAgent:
         # forbids (over threshold, already refunded, final sale, outside window, etc.).
         if order is not None and decision is not None:
             decision, final_message = await self._apply_guard(
-                decision, decision_id, order, final_message
+                decision, decision_id, order, final_message, authenticated_email
             )
-        elif decision == "approved" and order:
-            # approved with no guard override -> mark the order refunded
-            await self._mark_refunded(order.get("id"))
 
         reasoning = (
             f"Refund decision: {decision}" if decision else "Handled refund inquiry"
@@ -227,13 +236,14 @@ class RefundAgent:
         decision_id: Optional[str],
         order: Dict[str, Any],
         llm_message: str,
+        authenticated_email: Optional[str] = None,
     ) -> tuple[str, str]:
         """Reconcile the model decision with the deterministic guard.
 
         Returns the (final_decision, final_message). On override, corrects the
         audit row and substitutes a clear, policy-grounded message.
         """
-        verdict = reconcile(llm_decision, order)
+        verdict = reconcile(llm_decision, order, authenticated_email)
         final = verdict["decision"]
         order_id = order.get("id")
 

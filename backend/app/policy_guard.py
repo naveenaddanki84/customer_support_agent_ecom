@@ -16,16 +16,30 @@ from app.app_config import app_config
 _RANK = {"approved": 0, "escalated": 1, "denied": 2}
 
 
-def evaluate_order(order: Optional[Dict[str, Any]]) -> Dict[str, str]:
+def evaluate_order(
+    order: Optional[Dict[str, Any]],
+    authenticated_email: Optional[str] = None,
+) -> Dict[str, str]:
     """Return the deterministic verdict for an order from data + policy config.
 
     Returns ``{"decision": approved|denied|escalated, "reason": str}``.
-    Ownership is intentionally NOT checked here (it needs the claimed identity);
-    the LLM handles ownership and this guard backs up the pure data rules.
+
+    Ownership is enforced against ``authenticated_email`` — the signed-in
+    customer's identity from the session — NOT any email typed in the chat
+    (which a user could forge). When a real (``@``) identity is supplied and the
+    order belongs to someone else, the refund is denied before any other rule is
+    considered, so order details are never acted on for a non-owner.
     """
     pol = app_config.refund_policy
     if not order:
         return {"decision": "denied", "reason": "Order not found."}
+
+    if authenticated_email and "@" in authenticated_email:
+        owner = str(order.get("customer_email") or "").strip().lower()
+        if owner and owner != authenticated_email.strip().lower():
+            return {"decision": "denied",
+                    "reason": "This order belongs to a different customer."}
+
     if order.get("already_refunded"):
         return {"decision": "denied", "reason": "This order has already been refunded."}
     if order.get("is_final_sale"):
@@ -52,12 +66,16 @@ def evaluate_order(order: Optional[Dict[str, Any]]) -> Dict[str, str]:
     return {"decision": "approved", "reason": "Meets all automated refund-policy checks."}
 
 
-def reconcile(llm_decision: Optional[str], order: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def reconcile(
+    llm_decision: Optional[str],
+    order: Optional[Dict[str, Any]],
+    authenticated_email: Optional[str] = None,
+) -> Dict[str, Any]:
     """Combine the LLM's decision with the guard, taking the stricter outcome.
 
     Returns ``{"decision", "guard_reason", "overridden"}``.
     """
-    verdict = evaluate_order(order)
+    verdict = evaluate_order(order, authenticated_email)
     guard = verdict["decision"]
     llm = llm_decision if llm_decision in _RANK else "approved"
     final = guard if _RANK[guard] >= _RANK[llm] else llm

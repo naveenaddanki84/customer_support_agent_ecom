@@ -66,6 +66,52 @@ def test_at_threshold_is_approved():
     assert evaluate_order(order(amount=THRESHOLD))["decision"] == "approved"
 
 
+# --- ownership: enforced against the signed-in identity -------------------
+
+OWNER = "owner@example.com"
+
+
+def owned_order(**overrides):
+    return order(customer_email=OWNER, **overrides)
+
+
+def test_owner_match_is_approved():
+    assert evaluate_order(owned_order(), OWNER)["decision"] == "approved"
+
+
+def test_owner_match_is_case_insensitive():
+    assert evaluate_order(owned_order(), "OWNER@Example.com")["decision"] == "approved"
+
+
+def test_different_customer_is_denied():
+    # A clean, approvable order — but it belongs to someone else.
+    v = evaluate_order(owned_order(), "intruder@example.com")
+    assert v["decision"] == "denied" and "different customer" in v["reason"].lower()
+
+
+def test_ownership_denial_precedes_other_rules():
+    # Even an order that would escalate on amount is denied first for ownership,
+    # so a non-owner never learns anything about the order's attributes.
+    v = evaluate_order(owned_order(amount=THRESHOLD + 1000), "intruder@example.com")
+    assert v["decision"] == "denied" and "different customer" in v["reason"].lower()
+
+
+def test_no_identity_skips_ownership():
+    # Backward compatible: with no authenticated identity, ownership is not checked.
+    assert evaluate_order(owned_order())["decision"] == "approved"
+
+
+def test_non_email_identity_skips_ownership():
+    # A non-email user_id (e.g. "user-<uuid>") must not cause false denials.
+    assert evaluate_order(owned_order(), "user-1234")["decision"] == "approved"
+
+
+def test_reconcile_overrides_cross_customer_approval_to_deny():
+    # The exact screenshot bug: LLM approved a refund for another customer's order.
+    r = reconcile("approved", owned_order(), "intruder@example.com")
+    assert r["decision"] == "denied" and r["overridden"] is True
+
+
 # --- reconcile: guard only ever makes the outcome stricter ----------------
 
 def test_reconcile_overrides_unsafe_approval_to_escalate():

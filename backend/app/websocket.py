@@ -12,7 +12,7 @@ from datetime import datetime
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.models import WebSocketMessage
-from app.repositories import messages_repo
+from app.repositories import messages_repo, sessions_repo
 from app.workflow import chat_workflow
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,12 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
     await websocket.accept()
     logger.info(f"WebSocket connected for session {session_id}")
     _active_connections[str(session_id)] = websocket
+
+    # The signed-in customer's identity (their email) is stored on the session
+    # row. This is the authoritative identity for refund ownership — never a
+    # value derived from the session id, and never an email typed in the chat.
+    session_row = await sessions_repo.get(session_id)
+    authenticated_user_id = (session_row or {}).get("user_id") or f"user-{session_id}"
 
     try:
         # Send connection confirmation
@@ -93,9 +99,8 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
                 
                 # Process with complete workflow
                 try:
-                    user_id = f"user-{session_id}"  # Generate user_id from session_id
                     workflow_result = await chat_workflow.process_message(
-                        user_content, session_id, user_id
+                        user_content, session_id, authenticated_user_id
                     )
                     
                     # Save agent response
