@@ -76,6 +76,12 @@ def refund(order, email, extra=""):
 
 # Each case: name, category, turns[list[str]], expect{agent?, decision?, decision_not?, contains?}
 CASES = [
+    # --- Asks for the reason when the customer hasn't given one (no decision yet).
+    #     Runs FIRST so the order hasn't been refunded by an approve case yet. ---
+    ("asks for reason when missing", "reason",
+     [f"I'd like a refund for ORD-1002. My email is {ALICE}."],
+     {"agent": "refund", "decision": None}),
+
     # --- Refund approvals (in window, < $500, not final, not refunded) ---
     ("approve ORD-1001", "approve", [refund("ORD-1001", ALICE)],
      {"agent": "refund", "decision": "approved", "contains": "return"}),  # rule 12: refund on return
@@ -178,16 +184,11 @@ CASES = [
     # --- Memory / multi-turn ---
     ("memory recall name", "memory",
      ["My name is Atlas.", "What is my name?"], {"contains": "atlas"}),
-    ("memory order then email -> approve", "memory",
-     ["I want a refund for ORD-1016 because it stopped working.", f"my email is {HENRY}"],
+    ("memory order then reason -> approve", "memory",
+     ["I want a refund for ORD-1016.", f"It arrived damaged. My email is {HENRY}."],
      {"decision": "approved"}),
     ("memory email then order -> deny final sale", "memory",
      [f"my email is {BOB}", "please refund ORD-1004, it was the wrong size"], {"decision": "denied"}),
-
-    # --- Asks for the reason when the customer hasn't given one (no decision yet) ---
-    ("asks for reason when missing", "reason",
-     [f"I'd like a refund for ORD-1002. My email is {ALICE}."],
-     {"agent": "refund", "decision": None}),
 
     # --- New e-commerce policy rules (9-12) ---
     # Rule 10: customer broke it themselves after delivery -> deny (even though the
@@ -210,7 +211,9 @@ CASES = [
 ]
 
 
-_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+# Domain labels are [\w-]+ (no dot), so the match stops before a sentence-ending
+# period — e.g. "...example.com." yields "...example.com", not "...example.com.".
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 
 def _actor_email(turns) -> str | None:
@@ -222,7 +225,7 @@ def _actor_email(turns) -> str | None:
     for t in turns:
         m = _EMAIL_RE.search(t)
         if m:
-            return m.group(0)
+            return m.group(0).rstrip(".")  # belt-and-suspenders: never a trailing dot
     return None
 
 
