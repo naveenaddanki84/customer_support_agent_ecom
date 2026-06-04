@@ -25,6 +25,16 @@ class OpenAIClient:
         self.client = AsyncOpenAI(api_key=settings.openai_api_key)
         self.model = settings.openai_model
 
+    # Reasoning models (gpt-5*, o1/o3/o4*) only accept the default temperature (1),
+    # so we omit the parameter for them and pass it for everything else.
+    _NO_CUSTOM_TEMP_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+
+    def _temp_kwargs(self, temperature: float) -> Dict[str, Any]:
+        model = (self.model or "").lower()
+        if model.startswith(self._NO_CUSTOM_TEMP_PREFIXES):
+            return {}
+        return {"temperature": temperature}
+
     async def generate_structured(
         self,
         prompt: str,
@@ -36,7 +46,7 @@ class OpenAIClient:
             completion = await self.client.chat.completions.parse(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
+                **self._temp_kwargs(temperature),
                 response_format=response_schema,
             )
 
@@ -57,7 +67,7 @@ class OpenAIClient:
             completion = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
+                **self._temp_kwargs(temperature),
             )
 
             text = completion.choices[0].message.content
@@ -86,7 +96,7 @@ class OpenAIClient:
                 model=self.model,
                 messages=messages,
                 tools=tools,
-                temperature=temperature,
+                **self._temp_kwargs(temperature),
             )
 
             message = completion.choices[0].message
