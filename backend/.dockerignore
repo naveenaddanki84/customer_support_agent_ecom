@@ -1,0 +1,27 @@
+# Python virtualenv — the image builds its own Linux .venv via `uv sync`.
+# Copying the host (macOS) .venv over it would break the image.
+.venv/
+venv/
+
+# Python caches / build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Secrets and local env — never bake into the image
+.env
+.env.*
+
+# VCS / tooling / docs not needed at runtime
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+README.md
+scripts/reset_demo_state.sql

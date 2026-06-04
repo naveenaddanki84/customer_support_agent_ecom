@@ -1,0 +1,23 @@
+# Node deps and build output — the image installs/builds its own.
+# Copying the host copies in would bloat the context and can break the build.
+node_modules/
+.next/
+out/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Secrets and local env — never bake into the image
+.env
+.env.*.local
+
+# VCS / tooling / docs not needed at runtime
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+README.md
