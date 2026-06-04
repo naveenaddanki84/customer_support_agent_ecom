@@ -14,6 +14,7 @@ const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'
 export function useChat(sessionId: string | null) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
+  const [isClosed, setIsClosed] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   
   // Create session via REST API
@@ -51,6 +52,7 @@ export function useChat(sessionId: string | null) {
     setConnectionStatus('connecting')
     // Reset messages so the previous session's history doesn't bleed through
     setMessages([])
+    setIsClosed(false)
 
     const wsUrl = `${WS_BASE_URL}/ws/${sessionId}`
     console.log('Connecting to WebSocket:', wsUrl)
@@ -98,6 +100,20 @@ export function useChat(sessionId: string | null) {
           case 'system':
             console.log('System message:', message.data)
             break
+          case 'session_closed': {
+            const note = (message.data as any)?.message || 'This chat has been closed.'
+            setIsClosed(true)
+            setMessages(prev => [...prev, {
+              id: `closed-${prev.length}`,
+              session_id: sessionId || '',
+              sender: 'system',
+              content: note,
+              message_type: 'system',
+              created_at: new Date().toISOString(),
+              metadata: {},
+            } as ChatMessage])
+            break
+          }
           case 'error':
             console.error('WebSocket error:', message.data)
             break
@@ -122,6 +138,7 @@ export function useChat(sessionId: string | null) {
   
   // Send message via WebSocket
   const sendMessage = useCallback((content: string) => {
+    if (isClosed) return  // a closed chat no longer accepts messages
     if (!wsRef.current || connectionStatus !== 'connected') return
     
     const message: WebSocketMessage = {
@@ -153,6 +170,7 @@ export function useChat(sessionId: string | null) {
   return {
     messages,
     connectionStatus,
+    isClosed,
     sendMessage,
     createSession,
     reconnect: connectWebSocket,

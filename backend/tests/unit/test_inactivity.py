@@ -20,9 +20,9 @@ def test_close_inactive_query_structure(monkeypatch):
         return [{"id": "s1"}, {"id": "s2"}]  # pretend 2 sessions were closed
 
     monkeypatch.setattr(sessions_mod.db_manager, "execute_query", fake_exec)
-    n = run(sessions_repo.close_inactive(10))
+    closed = run(sessions_repo.close_inactive(10))
 
-    assert n == 2
+    assert closed == ["s1", "s2"]  # returns the ids of closed sessions
     q = captured["query"]
     assert "status = 'active'" in q
     assert "make_interval(mins => $1)" in q          # parameterised interval
@@ -31,9 +31,10 @@ def test_close_inactive_query_structure(monkeypatch):
     assert captured["args"] == (10,)
 
 
-def test_sweep_once_returns_count(monkeypatch):
+def test_sweep_once_returns_closed_ids(monkeypatch):
     async def fake_close(minutes):
-        return 3
+        return ["a", "b", "c"]
 
     monkeypatch.setattr(inactivity.sessions_repo, "close_inactive", fake_close)
-    assert run(inactivity.sweep_once()) == 3
+    # No live connections, so the per-session push is a no-op; just check the ids.
+    assert run(inactivity.sweep_once()) == ["a", "b", "c"]

@@ -25,6 +25,13 @@ class SessionsRepo:
         )
         return rows[0] if rows else None
 
+    async def get_status(self, session_id: UUID) -> Optional[str]:
+        """Lightweight status lookup (used per chat message to enforce closure)."""
+        rows = await db_manager.execute_query(
+            "SELECT status FROM sessions WHERE id = $1", session_id,
+        )
+        return rows[0]["status"] if rows else None
+
     async def close(self, session_id: UUID) -> Optional[Dict[str, Any]]:
         rows = await db_manager.execute_query(
             """
@@ -35,13 +42,13 @@ class SessionsRepo:
         )
         return rows[0] if rows else None
 
-    async def close_inactive(self, minutes: int = 10) -> int:
+    async def close_inactive(self, minutes: int = 10) -> List[str]:
         """Close active sessions idle for `minutes`, except unresolved escalations.
 
         Idle = no message in the last `minutes`. Sessions with a pending human
         escalation (a refund_decision with decision='escalated' and no resolution
         yet) are exempt; once resolved, the inactivity timer applies. Returns the
-        number of sessions closed.
+        ids of the sessions that were closed.
         """
         rows = await db_manager.execute_query(
             """
@@ -62,7 +69,7 @@ class SessionsRepo:
             """,
             minutes,
         )
-        return len(rows)
+        return [str(r["id"]) for r in rows]
 
     async def list_by_user(self, user_id: str) -> List[Dict[str, Any]]:
         """A user's sessions, newest first, with a derived title + last agent/decision."""

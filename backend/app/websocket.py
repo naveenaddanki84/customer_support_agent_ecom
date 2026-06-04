@@ -78,6 +78,20 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: UUID):
             
             if ws_message.type == "chat":
                 user_content = ws_message.data.get("content", "")
+
+                # A closed session (ended by the user/admin or auto-closed for
+                # inactivity) no longer accepts messages.
+                if await sessions_repo.get_status(session_id) == "closed":
+                    await websocket.send_text(json.dumps({
+                        "type": "session_closed",
+                        "data": {
+                            "session_id": str(session_id),
+                            "reason": "closed",
+                            "message": "This chat has been closed. Please start a new chat to continue.",
+                        },
+                    }))
+                    continue
+
                 # Save user message
                 user_metadata = ws_message.data.get("metadata", {})
                 await messages_repo.insert(session_id, "user", user_content, "text", user_metadata)

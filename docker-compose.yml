@@ -47,6 +47,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL}
       ENVIRONMENT: ${ENVIRONMENT}
+      # Auto-close idle chats (minutes idle before close, sweep interval seconds)
+      INACTIVITY_MINUTES: ${INACTIVITY_MINUTES:-10}
+      SWEEP_INTERVAL_SECONDS: ${SWEEP_INTERVAL_SECONDS:-60}
       # Prompt versioning (empty -> falls back to the in-code default "v1")
       PROMPT_VERSION_DEFAULT: ${PROMPT_VERSION_DEFAULT:-v1}
       PROMPT_VERSION_ROUTER: ${PROMPT_VERSION_ROUTER:-}

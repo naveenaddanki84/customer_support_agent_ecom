@@ -22,7 +22,12 @@ export default function ChatPage() {
   const [welcome, setWelcome] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const { messages, connectionStatus, sendMessage, reconnect } = useChat(sessionId)
+  const { messages, connectionStatus, isClosed, sendMessage, reconnect } = useChat(sessionId)
+
+  // Reflect a server-side close (auto-close on inactivity, or admin close).
+  useEffect(() => {
+    if (isClosed) setClosed(true)
+  }, [isClosed])
 
   // Load the agent's name + welcome message once
   useEffect(() => {
