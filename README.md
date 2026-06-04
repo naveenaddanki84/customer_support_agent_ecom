@@ -90,9 +90,10 @@ flowchart TB
     end
 
     subgraph API["API — FastAPI"]
-        WS["WebSocket /ws/:session<br/>+ connection registry"]
+        WS["WebSocket /ws/:session<br/>resolves signed-in identity<br/>+ connection registry"]
         CR["chat router"]
         AR["admin router"]
+        SWEEP["Inactivity sweep<br/>auto-closes idle sessions (10m)<br/>keeps open escalations"]
     end
 
     subgraph SVC["Service layer"]
@@ -106,7 +107,7 @@ flowchart TB
         FAQ["FAQ agent"]
         RF["Refund agent<br/>tool-calling loop"]
         ES["Escalation agent"]
-        PGRD["Policy guard<br/>deterministic safety net"]
+        PGRD["Policy guard<br/>deterministic: ownership + policy"]
         GR["Guardrails<br/>LLM safety check"]
     end
 
@@ -147,6 +148,8 @@ flowchart TB
     AGT_S --> REPO
     REPO --> PG
     RT -.->|persistent memory| PG
+    WS -.->|identity from session| PG
+    SWEEP -.->|close idle| PG
 
     %% ---- editable knowledge documents ----
     TOOLS -.->|reads policy| DOCS
@@ -165,9 +168,11 @@ flowchart TB
     classDef agent fill:#b2f2bb,stroke:#2f9e44,color:#000
     classDef safety fill:#ffc9c9,stroke:#e03131,color:#000
     classDef dep fill:#f1f3f5,stroke:#868e96,color:#000
+    classDef bg fill:#fff3bf,stroke:#f08c00,color:#000
 
     class CHAT,ADMIN fe
     class WS,CR,AR api
+    class SWEEP bg
     class ESC_S,ADM_S,AGT_S svc
     class RT,FAQ,RF,ES agent
     class PGRD,GR safety
