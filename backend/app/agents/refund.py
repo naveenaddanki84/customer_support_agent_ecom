@@ -40,6 +40,7 @@ class _RefundState(TypedDict):
     messages: List[Dict[str, Any]]
     trace: List[Dict[str, Any]]
     session_id: Optional[str]
+    authenticated_email: Optional[str]
     nudged: bool
 
 
@@ -131,7 +132,11 @@ class RefundAgent:
             except json.JSONDecodeError:
                 args = {}
 
-            result = await execute_tool(name, args, session_id=state.get("session_id"))
+            result = await execute_tool(
+                name, args,
+                session_id=state.get("session_id"),
+                authenticated_email=state.get("authenticated_email"),
+            )
             messages.append(
                 {"role": "tool", "tool_call_id": call["id"], "content": result}
             )
@@ -175,6 +180,7 @@ class RefundAgent:
                     "messages": messages,
                     "trace": [],
                     "session_id": session_id,
+                    "authenticated_email": authenticated_email,
                     "nudged": False,
                 },
                 {"recursion_limit": 15},

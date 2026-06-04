@@ -32,21 +32,42 @@ def _row_to_dict(row: Dict[str, Any]) -> Dict[str, Any]:
 
 # --- Tool implementations -------------------------------------------------
 
-async def lookup_customer(email: str) -> Dict[str, Any]:
-    """Find a customer by email."""
+def _is_self(email: str, authenticated_email: Optional[str]) -> bool:
+    """True unless we have a real signed-in identity that differs from `email`.
+
+    Access control: a customer may only ever read their OWN data. When a real
+    (``@``) authenticated identity is present, any other email is rejected; this
+    cannot be talked around by the LLM or prompt injection.
+    """
+    if authenticated_email and "@" in authenticated_email:
+        return (email or "").strip().lower() == authenticated_email.strip().lower()
+    return True
+
+
+async def lookup_customer(email: str, authenticated_email: Optional[str] = None) -> Dict[str, Any]:
+    """Find a customer by email — restricted to the signed-in customer."""
+    if not _is_self(email, authenticated_email):
+        return {"found": False, "message": "You can only look up your own account."}
     row = await customers_repo.get_by_email(email)
     if not row:
         return {"found": False, "message": f"No customer found with email {email}"}
     return {"found": True, "customer": _row_to_dict(row)}
 
 
-async def get_order(order_id: str) -> Dict[str, Any]:
-    """Fetch a single order with its owning customer's id and email."""
+async def get_order(order_id: str, authenticated_email: Optional[str] = None) -> Dict[str, Any]:
+    """Fetch a single order — only if it belongs to the signed-in customer."""
     row = await orders_repo.get_with_customer(order_id)
     if not row:
         return {"found": False, "message": f"No order found with id {order_id}"}
 
     order = _row_to_dict(row)
+    # Access control: never reveal another customer's order.
+    if authenticated_email and "@" in authenticated_email:
+        owner = str(order.get("customer_email") or "").strip().lower()
+        if owner and owner != authenticated_email.strip().lower():
+            return {"found": False,
+                    "message": f"No order {order_id} is associated with your account."}
+
     # Provide the date arithmetic as a fact so the model doesn't have to compute
     # it (LLMs are unreliable at date math). The agent still applies the policy's
     # stated window to this number.
@@ -58,9 +79,10 @@ async def get_order(order_id: str) -> Dict[str, Any]:
     return {"found": True, "order": order}
 
 
-async def list_customer_orders(email: str) -> Dict[str, Any]:
-    """List all orders belonging to the customer with the given email."""
-    rows = await orders_repo.list_by_email(email)
+async def list_customer_orders(email: str, authenticated_email: Optional[str] = None) -> Dict[str, Any]:
+    """List orders — always scoped to the signed-in customer's own account."""
+    target = authenticated_email if (authenticated_email and "@" in authenticated_email) else email
+    rows = await orders_repo.list_by_email(target)
     return {"count": len(rows), "orders": [_row_to_dict(r) for r in rows]}
 
 
@@ -196,8 +218,14 @@ _TOOLS = {
 }
 
 
+_IDENTITY_SCOPED = {"get_order", "lookup_customer", "list_customer_orders"}
+
+
 async def execute_tool(
-    name: str, arguments: Dict[str, Any], session_id: Optional[str] = None
+    name: str,
+    arguments: Dict[str, Any],
+    session_id: Optional[str] = None,
+    authenticated_email: Optional[str] = None,
 ) -> str:
     """Execute a tool by name and return a JSON string result."""
     tool = _TOOLS.get(name)
@@ -205,9 +233,12 @@ async def execute_tool(
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     try:
-        # record_refund_decision is the only tool that needs the session context.
+        # record_refund_decision needs the session; the read tools are scoped to
+        # the signed-in customer so the agent can never read another's data.
         if name == "record_refund_decision":
             result = await tool(session_id=session_id, **arguments)
+        elif name in _IDENTITY_SCOPED:
+            result = await tool(authenticated_email=authenticated_email, **arguments)
         else:
             result = await tool(**arguments)
         return json.dumps(result, default=_json_safe)
