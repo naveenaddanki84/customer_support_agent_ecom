@@ -279,9 +279,9 @@ Three tiers, from fast pure-logic checks to full LLM behavioural evals — all g
 |-------|----------------|--------|
 | **Unit** — `backend/tests/unit` | `policy_guard` (incl. ownership), cross-customer read scoping, inactivity-sweep query, the knowledge-document reader, and `app_config`; no stack, no network | ✅ **38 / 38 passed** |
 | **Adversarial edge cases** — `backend/evaluation/edge_cases.py` | topic-jumping mid-chat, prompt-grilling for another customer's data, over-refunding (a $5000 claim on a $129.99 order), already-refunded re-requests, and verifying the order is marked refunded in the database | ✅ **12 / 12 passed** |
-| **Behavioural evals** — `backend/evaluation/agent_evals.py` | 56 scenarios: refund approve / deny / escalate, every policy edge case, ownership + impersonation, 8 prompt-injection attacks, customer-fault-damage denial, routing, FAQ grounding, escalation, and cross-restart memory | ✅ **55 / 56** † |
+| **Behavioural evals** — `backend/evaluation/agent_evals.py` | 57 scenarios: refund approve / deny / escalate, every policy edge case, ownership + impersonation, 9 prompt-injection attacks, customer-fault-damage denial, routing continuity, FAQ grounding, escalation, and cross-restart memory | ✅ **57 / 57** † |
 
-† Every security and policy category passes 100% (ownership/impersonation 5/5, injection 9/9, deny 10/10, reason 2/2). The single soft miss is the LLM *escalating* a low-value approval — the safe direction (a human approves it); a prompt injection never yields an unauthorized approval. Soft misses are expected on LLM-driven evals and vary run to run.
+† Clean sweep on `gpt-5-mini`: approve 8/8, deny 10/10, escalate 5/5, escalation 3/3, faq 11/11, injection 9/9, memory 3/3, ownership 6/6, reason 2/2. Because the agents are LLM-driven, a small number of soft (non-security) misses can vary run to run; the hard invariant — a prompt injection never yields an unauthorized approval — always holds.
 
 ```bash
 # one-time: install backend deps (used by the unit tests and the eval runners)
@@ -293,7 +293,7 @@ uv run pytest tests/unit -q
 # 2) Behavioural suites need the stack running. From the repo root:
 #      docker compose up -d --build
 uv run python evaluation/edge_cases.py                                    # adversarial edge cases
-API_BASE=http://localhost:8000 uv run python evaluation/agent_evals.py    # full 56-case eval
+API_BASE=http://localhost:8000 uv run python evaluation/agent_evals.py    # full 57-case eval
 ```
 
 > The behavioural suites are LLM-driven and idempotent — `agent_evals.py` resets seeded order state at the start of every run, so re-runs never drift. The hard invariant across all injection cases: a prompt-injection attack never yields an unauthorized refund approval.
@@ -350,7 +350,7 @@ backend/
   config.yaml        agent name + refund-policy thresholds
   scripts/init.sql   schema + seed data (CRM, orders) — policy/FAQ are documents now
   tests/             unit/ (pytest, no stack) + test_frontend_endpoints.py (live endpoints)
-  evaluation/        behavioural LLM evals (56-case + adversarial edge cases)
+  evaluation/        behavioural LLM evals (57-case + adversarial edge cases)
 frontend/
   app/chat/          customer chat UI (page + Sidebar)
   app/admin/         tabbed dashboard (overview/escalations/sessions/customers) + sessions/ trace route
