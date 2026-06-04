@@ -61,8 +61,18 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      # Anonymous volumes keep the image-built venv/caches from being shadowed
+      # by the host bind mount above (host has no Linux .venv -> startup re-sync).
+      - /app/.venv
       - /app/__pycache__
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      # Frontend waits on this; /health returns 200 only once uvicorn is serving.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
 
   # Frontend service
@@ -81,7 +91,8 @@ services:
       - /app/node_modules
       - /app/.next
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

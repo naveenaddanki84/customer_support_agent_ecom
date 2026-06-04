@@ -20,7 +20,23 @@ export default function Sidebar({
   const [orders, setOrders] = useState<Order[]>([])
 
   useEffect(() => {
-    api.customers().then(setCustomers).catch(() => setCustomers([]))
+    let cancelled = false
+    const load = async () => {
+      // On first boot the backend may not be serving yet; retry with backoff
+      // instead of giving up and leaving the customer dropdown empty.
+      for (let attempt = 0; attempt < 6; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, Math.min(2000 * attempt, 10000)))
+        try {
+          const data = await api.customers()
+          if (!cancelled) setCustomers(data)
+          return
+        } catch {
+          // transient — keep retrying
+        }
+      }
+    }
+    load()
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
