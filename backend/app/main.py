@@ -3,6 +3,7 @@ Main FastAPI application for Multi-Agent Customer Chat.
 Minimal, production-ready setup with health checks and database connectivity.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Dict, Any
@@ -36,6 +37,8 @@ async def lifespan(app: FastAPI):
         await cache_manager.connect()
         from app.workflow import chat_workflow
         await chat_workflow.setup()
+        from app.inactivity import sweep_loop
+        app.state.inactivity_task = asyncio.create_task(sweep_loop())
         logger.info("Application startup completed")
     except Exception as e:
         logger.error(f"Failed to start application: {e}")
@@ -45,6 +48,13 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down application")
+    task = getattr(app.state, "inactivity_task", None)
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     from app.workflow import chat_workflow
     await chat_workflow.aclose()
     await db_manager.disconnect()

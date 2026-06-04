@@ -35,6 +35,35 @@ class SessionsRepo:
         )
         return rows[0] if rows else None
 
+    async def close_inactive(self, minutes: int = 10) -> int:
+        """Close active sessions idle for `minutes`, except unresolved escalations.
+
+        Idle = no message in the last `minutes`. Sessions with a pending human
+        escalation (a refund_decision with decision='escalated' and no resolution
+        yet) are exempt; once resolved, the inactivity timer applies. Returns the
+        number of sessions closed.
+        """
+        rows = await db_manager.execute_query(
+            """
+            UPDATE sessions s
+            SET status = 'closed', updated_at = NOW()
+            WHERE s.status = 'active'
+              AND COALESCE(
+                    (SELECT max(m.created_at) FROM messages m WHERE m.session_id = s.id),
+                    s.created_at
+                  ) < NOW() - make_interval(mins => $1)
+              AND s.id NOT IN (
+                    SELECT rd.session_id FROM refund_decisions rd
+                    WHERE rd.decision = 'escalated'
+                      AND rd.resolution IS NULL
+                      AND rd.session_id IS NOT NULL
+                  )
+            RETURNING s.id
+            """,
+            minutes,
+        )
+        return len(rows)
+
     async def list_by_user(self, user_id: str) -> List[Dict[str, Any]]:
         """A user's sessions, newest first, with a derived title + last agent/decision."""
         return await db_manager.execute_query(
