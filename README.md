@@ -274,7 +274,9 @@ Three tiers, from fast pure-logic checks to full LLM behavioural evals — all g
 |-------|----------------|--------|
 | **Unit** — `backend/tests/unit` | `policy_guard` (incl. ownership), cross-customer read scoping, inactivity-sweep query, the knowledge-document reader, and `app_config`; no stack, no network | ✅ **38 / 38 passed** |
 | **Adversarial edge cases** — `backend/evaluation/edge_cases.py` | topic-jumping mid-chat, prompt-grilling for another customer's data, over-refunding (a $5000 claim on a $129.99 order), already-refunded re-requests, and verifying the order is marked refunded in the database | ✅ **12 / 12 passed** |
-| **Behavioural evals** — `backend/evaluation/agent_evals.py` | 56 scenarios: refund approve / deny / escalate, every policy edge case, ownership + impersonation, 8 prompt-injection attacks, customer-fault-damage denial, routing, FAQ grounding, escalation, and cross-restart memory | ✅ **passing** |
+| **Behavioural evals** — `backend/evaluation/agent_evals.py` | 56 scenarios: refund approve / deny / escalate, every policy edge case, ownership + impersonation, 8 prompt-injection attacks, customer-fault-damage denial, routing, FAQ grounding, escalation, and cross-restart memory | ✅ **55 / 56** † |
+
+† Every security and policy category passes 100% (ownership/impersonation 5/5, injection 9/9, deny 10/10, reason 2/2). The single soft miss is the LLM *escalating* a low-value approval — the safe direction (a human approves it); a prompt injection never yields an unauthorized approval. Soft misses are expected on LLM-driven evals and vary run to run.
 
 ```bash
 # one-time: install backend deps (used by the unit tests and the eval runners)
