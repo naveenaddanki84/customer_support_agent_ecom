@@ -11,7 +11,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
-from app.repositories import customers_repo, orders_repo, policies_repo, refunds_repo
+from app import knowledge
+from app.repositories import customers_repo, orders_repo, refunds_repo
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +65,8 @@ async def list_customer_orders(email: str) -> Dict[str, Any]:
 
 
 async def get_refund_policy() -> Dict[str, Any]:
-    """Return the authoritative refund policy text."""
-    content = await policies_repo.get_refund_policy()
+    """Return the authoritative refund policy text (from the editable document)."""
+    content = knowledge.read_refund_policy()
     if not content:
         return {"found": False, "message": "Refund policy is not configured"}
     return {"found": True, "policy": content}
