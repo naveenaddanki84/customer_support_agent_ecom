@@ -4,7 +4,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-async-green?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Orchestration-blueviolet)](https://github.com/langchain-ai/langgraph)
-[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o-412991?logo=openai)](https://platform.openai.com/docs)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--5--mini-412991?logo=openai)](https://platform.openai.com/docs)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://www.docker.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue?logo=postgresql)](https://www.postgresql.org/)
 
@@ -64,11 +64,11 @@ The PostgreSQL container auto-seeds the mock CRM and orders on first boot (`back
 
 ### Providing the API key
 
-The only required secret is `OPENAI_API_KEY`. It is read from `.env` (git-ignored) and injected into the backend container by `docker-compose.yml`. Optionally set `OPENAI_MODEL` (default `gpt-4o-mini`).
+The only required secret is `OPENAI_API_KEY`. It is read from `.env` (git-ignored) and injected into the backend container by `docker-compose.yml`. Optionally set `OPENAI_MODEL` (default `gpt-5-mini`).
 
 ```env
 OPENAI_API_KEY=sk-your-key-here
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL=gpt-5-mini
 ```
 
 ---
@@ -248,7 +248,7 @@ change applies immediately — no DB update, no redeploy):
 |-------|------------|
 | Frontend | Next.js 15 (React 19), Tailwind v4, WebSocket chat |
 | Backend | FastAPI, WebSocket, LangGraph orchestration |
-| LLM | OpenAI (`gpt-4o-mini` by default) via the official SDK + structured outputs & function calling |
+| LLM | OpenAI (`gpt-5-mini` by default) via the official SDK + structured outputs & function calling |
 | Data | PostgreSQL (CRM, orders, policy, audit + reasoning logs), Redis (cache) |
 | Infra | Docker Compose (4 services, one command) |
 
@@ -384,7 +384,7 @@ A sample `faq/v2.md` ("Pixel" persona) ships as a worked example.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | OpenAI API key | **required** |
-| `OPENAI_MODEL` | Chat model | `gpt-4o-mini` |
+| `OPENAI_MODEL` | Chat model | `gpt-5-mini` |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | Database credentials | see `env.example` |
 | `DATABASE_URL` | Postgres connection string | see `env.example` |
 | `REDIS_URL` | Redis connection string | `redis://redis:6379` |
